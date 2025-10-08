@@ -49,7 +49,7 @@ A modern React-based admin panel with JWT authentication, built with TypeScript,
 
 ### Base URL
 ```
-https://7cvccltb-5000.inc1.devtunnels.ms/api
+https://z7s50012-5000.inc1.devtunnels.ms/api
 ```
 
 ### Authentication Endpoints

@@ -12,7 +12,7 @@ import {
   X
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { scrapingApi, ScrapedProduct, ScrapedCategoryData, adminApi, CreateScrapeLogResponse, Product } from '../../services/api';
+import { scrapingApi, ScrapedProduct, ScrapedCategoryData, adminApi, CreateScrapeLogResponse } from '../../services/api';
 
 // Using types from API service
 
@@ -40,115 +40,8 @@ const ScrapeProducts: React.FC = () => {
   const [availableSubSubcategories, setAvailableSubSubcategories] = useState<any[]>([]);
   const [isInserting, setIsInserting] = useState<boolean>(false);
   const [isLoadingCategories, setIsLoadingCategories] = useState<boolean>(false);
-  const [showLogsModal, setShowLogsModal] = useState<boolean>(false);
-  const [logs, setLogs] = useState<any[]>([]);
-  const [logsPagination, setLogsPagination] = useState({ currentPage: 1, totalPages: 1, totalItems: 0, itemsPerPage: 20 });
-  const [logsFilters, setLogsFilters] = useState<{ page: number; limit: number; platform?: string; type?: 'product' | 'category'; status?: 'pending' | 'success' | 'failed'; startDate?: string; endDate?: string; search?: string; }>({ page: 1, limit: 20 });
 
-  // Existing products list (for quick view within this page)
-  const [existingProducts, setExistingProducts] = useState<Product[]>([]);
-  const [existingProductsLoading, setExistingProductsLoading] = useState<boolean>(false);
-  const [existingProductsSearch, setExistingProductsSearch] = useState<string>('');
-  const [existingProductsPage, setExistingProductsPage] = useState<number>(1);
-  const [existingProductsPagination, setExistingProductsPagination] = useState<{ currentPage: number; totalPages: number; totalProducts: number; hasNext: boolean; hasPrev: boolean } | null>(null);
 
-  // Bulk upload helpers
-  const handleDownloadCSVTemplate = () => {
-    const header = 'Title,Product Description,AI Description for SEO,Regular Price,Sale Price,Discount Percentage,Product Tag (For search functionality),Bank/Card Offers,Seller (Name of the Scrap Source),Brand Name,Product URL,Product Image URL,Product Created date,Product Updated date,Product ID,Product Main Category,Product Sub Category,Product Sub Sub Category\n';
-    const minimal = 'Sample Product,1999,1499,https://example.com/image.jpg,650f0a1b2c3d4e5f6a7b8c9d\n';
-    const blob = new Blob([header + minimal], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'products_template.csv';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
-  const handleBulkUploadFile = async (file: File) => {
-    try {
-      toast.loading('Uploading file...', { id: 'bulk' });
-      const res = await adminApi.bulkUploadProducts(file);
-      toast.success(res.message || 'Bulk upload completed', { id: 'bulk' });
-    } catch (e: any) {
-      toast.error(e.message || 'Bulk upload failed', { id: 'bulk' });
-    }
-  };
-
-  const fetchExistingProducts = async (page: number = 1, search: string = '') => {
-    try {
-      setExistingProductsLoading(true);
-      const res = await adminApi.getProducts({ page, limit: 10, search: search || undefined });
-      setExistingProducts(res.data.products);
-      setExistingProductsPagination(res.data.pagination);
-      setExistingProductsPage(page);
-    } catch (e) {
-      toast.error('Failed to load products');
-    } finally {
-      setExistingProductsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchExistingProducts(1, '');
-  }, []);
-
-  // Recent scrapes (localStorage-backed)
-  type RecentScrapeStatus = 'pending' | 'success' | 'failed';
-  interface RecentScrapeItem {
-    id: string; // unique key: platform|type|url|timestamp
-    platform: string;
-    type: 'product' | 'category';
-    url: string;
-    categoryId?: string;
-    categoryName?: string;
-    createdAt: number; // epoch ms
-    status: RecentScrapeStatus;
-    page?: number;
-  }
-  const RECENT_SCRAPES_KEY = 'recentScrapes';
-  const MAX_RECENT = 20;
-  const [recentScrapes, setRecentScrapes] = useState<RecentScrapeItem[]>([]);
-
-  const loadRecentScrapes = () => {
-    try {
-      const raw = localStorage.getItem(RECENT_SCRAPES_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as RecentScrapeItem[];
-      if (Array.isArray(parsed)) setRecentScrapes(parsed);
-    } catch {}
-  };
-
-  const saveRecentScrapes = (items: RecentScrapeItem[]) => {
-    setRecentScrapes(items);
-    try { localStorage.setItem(RECENT_SCRAPES_KEY, JSON.stringify(items.slice(0, MAX_RECENT))); } catch {}
-  };
-
-  const upsertRecentScrape = (partial: Omit<RecentScrapeItem, 'id' | 'createdAt'> & { id?: string; createdAt?: number }) => {
-    const id = partial.id || `${partial.platform}|${partial.type}|${partial.url}|${Date.now()}`;
-    const createdAt = partial.createdAt || Date.now();
-    const next = [...recentScrapes];
-    const idx = next.findIndex(i => i.id === id);
-    const item: RecentScrapeItem = {
-      id,
-      platform: partial.platform,
-      type: partial.type,
-      url: partial.url,
-      categoryId: partial.categoryId,
-      categoryName: partial.categoryName,
-      createdAt,
-      status: partial.status as RecentScrapeStatus,
-      page: partial.page,
-    };
-    if (idx >= 0) next[idx] = { ...next[idx], ...item };
-    else next.unshift(item);
-    saveRecentScrapes(next.sort((a,b) => b.createdAt - a.createdAt).slice(0, MAX_RECENT));
-    return item.id;
-  };
-
-  useEffect(() => { loadRecentScrapes(); }, []);
 
   const platforms = [
     { value: 'flipkart', label: 'Flipkart', color: 'bg-blue-500' },
@@ -181,16 +74,6 @@ const ScrapeProducts: React.FC = () => {
       const top = categories.find((c: any) => c.id === selectedCategoryId);
       return top?.name;
     })();
-    // Insert a pending entry into recent history
-    const pendingId = upsertRecentScrape({
-      platform: selectedPlatform,
-      type: scrapeType,
-      url: productUrl.trim(),
-      categoryId: selectedCategoryId || undefined,
-      categoryName,
-      status: 'pending',
-      page: scrapeType === 'category' ? pageNumber : undefined,
-    });
 
     // POST scrape-logs (pending)
     let remoteLogId: string | undefined;
@@ -213,18 +96,6 @@ const ScrapeProducts: React.FC = () => {
         setScrapedData(data.data);
         setScrapedCategoryData(null);
         toast.success('Product scraped successfully!');
-        // Mark recent as success
-        upsertRecentScrape({
-          id: pendingId,
-          createdAt: Date.now(),
-          platform: selectedPlatform,
-          type: scrapeType,
-          url: productUrl.trim(),
-          categoryId: selectedCategoryId || undefined,
-          categoryName,
-          status: 'success',
-          page: undefined,
-        });
         // PUT scrape-logs success
         if (remoteLogId) {
           try { await scrapingApi.updateScrapeLog(remoteLogId, { status: 'success', action: 'Manual' }); } catch {}
@@ -235,18 +106,6 @@ const ScrapeProducts: React.FC = () => {
         setScrapedData(null);
         setSelectedProducts([]);
         toast.success(`Category scraped successfully! Found ${data.data.totalProducts} products on page ${pageNumber}.`);
-        // Mark recent as success
-        upsertRecentScrape({
-          id: pendingId,
-          createdAt: Date.now(),
-          platform: selectedPlatform,
-          type: scrapeType,
-          url: productUrl.trim(),
-          categoryId: selectedCategoryId || undefined,
-          categoryName,
-          status: 'success',
-          page: pageNumber,
-        });
         // PUT scrape-logs success
         if (remoteLogId) {
           try { await scrapingApi.updateScrapeLog(remoteLogId, { status: 'success', action: 'Manual' }); } catch {}
@@ -256,18 +115,6 @@ const ScrapeProducts: React.FC = () => {
       const errorMessage = err.message || `Failed to scrape ${scrapeType}. Please try again.`;
       setError(errorMessage);
       toast.error(errorMessage);
-      // Mark recent as failed
-      upsertRecentScrape({
-        id: pendingId,
-        createdAt: Date.now(),
-        platform: selectedPlatform,
-        type: scrapeType,
-        url: productUrl.trim(),
-        categoryId: selectedCategoryId || undefined,
-        categoryName,
-        status: 'failed',
-        page: scrapeType === 'category' ? pageNumber : undefined,
-      });
       // PUT scrape-logs failed
       if (remoteLogId) {
         try { await scrapingApi.updateScrapeLog(remoteLogId, { status: 'failed', action: 'Manual' }); } catch {}
@@ -327,15 +174,6 @@ const ScrapeProducts: React.FC = () => {
     }
   };
 
-  const fetchLogs = async () => {
-    try {
-      const res = await scrapingApi.getScrapeLogs(logsFilters);
-      setLogs(res.data);
-      setLogsPagination(res.pagination);
-    } catch (e) {
-      toast.error('Failed to load scrape logs');
-    }
-  };
 
   const handleCategoryChange = (categoryId: string) => {
     setSelectedCategoryId(categoryId);
@@ -423,7 +261,7 @@ const ScrapeProducts: React.FC = () => {
       console.log('AI Description:', productData.aiDescription);
       console.log('================================================');
 
-      const response = await fetch('https://7cvccltb-5000.inc1.devtunnels.ms/api/admin/products', {
+      const response = await fetch('https://z7s50012-5000.inc1.devtunnels.ms/api/admin/products', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -689,7 +527,7 @@ const ScrapeProducts: React.FC = () => {
         ].filter(Boolean)
       };
 
-      const response = await fetch('https://7cvccltb-5000.inc1.devtunnels.ms/api/admin/products', {
+      const response = await fetch('https://z7s50012-5000.inc1.devtunnels.ms/api/admin/products', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -815,7 +653,7 @@ const ScrapeProducts: React.FC = () => {
           ].filter(Boolean)
         };
 
-        const response = await fetch('https://7cvccltb-5000.inc1.devtunnels.ms/api/admin/products', {
+        const response = await fetch('https://z7s50012-5000.inc1.devtunnels.ms/api/admin/products', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -972,97 +810,12 @@ const ScrapeProducts: React.FC = () => {
             <h1 className="text-2xl font-bold text-gray-900">Scrape Products</h1>
             <p className="text-gray-600">Extract product data from e-commerce platforms</p>
           </div>
-          <div className="ml-auto">
-            <button
-              onClick={() => { setShowLogsModal(true); fetchLogs(); }}
-              className="px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-800"
-            >
-              View Scrape Logs
-            </button>
-          </div>
         </div>
       </div>
 
-      {/* Recent Scrapes (localStorage) */}
-      {recentScrapes.length > 0 && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-gray-900">Recent Scrapes</h2>
-            <button
-              onClick={() => saveRecentScrapes([])}
-              className="text-sm text-red-600 hover:text-red-700"
-            >
-              Clear All
-            </button>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">When</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Platform</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">URL</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {recentScrapes.map((r) => (
-                  <tr key={r.id}>
-                    <td className="px-4 py-2 text-sm text-gray-600">{new Date(r.createdAt).toLocaleString()}</td>
-                    <td className="px-4 py-2 text-sm text-gray-900 capitalize">{r.platform}</td>
-                    <td className="px-4 py-2 text-sm text-gray-900 capitalize">{r.type}</td>
-                    <td className="px-4 py-2 text-sm text-gray-600 truncate max-w-xs" title={r.url}>{r.url}</td>
-                    <td className="px-4 py-2 text-sm text-gray-900">{r.categoryName || '-'}</td>
-                    <td className="px-4 py-2">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        r.status === 'success' ? 'bg-green-100 text-green-700' : r.status === 'failed' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
-                      }`}>
-                        {r.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2">
-                      <button
-                        className="text-indigo-600 hover:text-indigo-800 text-sm"
-                        onClick={() => {
-                          setSelectedPlatform(r.platform);
-                          setScrapeType(r.type);
-                          setProductUrl(r.url);
-                          if (r.type === 'category' && r.page) setPageNumber(r.page);
-                          if (r.categoryId) setSelectedCategoryId(r.categoryId);
-                          // Trigger scrape
-                          setTimeout(async () => {
-                            // Create log with action Retry
-                            try {
-                              await scrapingApi.createScrapeLog({
-                                when: new Date().toISOString(),
-                                platform: r.platform,
-                                type: r.type,
-                                url: r.url,
-                                category: r.categoryName,
-                                status: 'pending',
-                                action: 'Retry',
-                              });
-                            } catch {}
-                            await handleScrape();
-                          }, 0);
-                        }}
-                      >
-                        Retry
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       {/** Bulk Upload Documentation & Uploader */}
-      <div className="mt-8 pt-8 border-t border-gray-200">
+      {/* <div className="mt-8 pt-8 border-t border-gray-200">
         <h2 className="text-xl font-semibold text-gray-900 mb-4">Bulk Upload Products (CSV/XLSX)</h2>
         <p className="text-sm text-gray-600 mb-4">
           Use the CSV/XLSX template to prepare products and upload. The server endpoint accepts a file at
@@ -1120,10 +873,10 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
         <p className="text-xs text-gray-500">
           Note: Ensure category IDs correspond to existing `Main/Sub/Sub Sub` categories. Dates should be ISO (YYYY-MM-DD).
         </p>
-      </div>
+      </div> */}
 
       {/** Existing Products (Quick View) */}
-      <div className="mt-8 pt-8 border-t border-gray-200">
+      {/* <div className="mt-8 pt-8 border-t border-gray-200">
         <h2 className="text-xl font-semibold text-gray-900 mb-4">Existing Products</h2>
         <div className="flex items-center gap-3 mb-4">
           <input
@@ -1197,7 +950,7 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
             </button>
           </div>
         )}
-      </div>
+      </div> */}
 
       {/** Handlers defined as function declarations to allow usage above */}
       {(() => { /* no render */ return null; })()}
@@ -2366,92 +2119,6 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
         </div>
       )}
 
-      {/* Logs Modal */}
-      {showLogsModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <h2 className="text-xl font-semibold text-gray-900">Scrape Logs</h2>
-              <button onClick={() => setShowLogsModal(false)} className="text-gray-500 hover:text-gray-700">Close</button>
-            </div>
-            <div className="p-6 space-y-4">
-              {/* Filters */}
-              <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-                <input className="px-3 py-2 border rounded" placeholder="Search" value={logsFilters.search || ''} onChange={(e) => setLogsFilters(v => ({ ...v, page: 1, search: e.target.value }))} />
-                <select className="px-3 py-2 border rounded" value={logsFilters.platform || ''} onChange={(e) => setLogsFilters(v => ({ ...v, page: 1, platform: e.target.value || undefined }))}>
-                  <option value="">All Platforms</option>
-                  <option value="flipkart">Flipkart</option>
-                  <option value="amazon">Amazon</option>
-                  <option value="myntra">Myntra</option>
-                </select>
-                <select className="px-3 py-2 border rounded" value={logsFilters.type || ''} onChange={(e) => setLogsFilters(v => ({ ...v, page: 1, type: (e.target.value || undefined) as any }))}>
-                  <option value="">All Types</option>
-                  <option value="product">Product</option>
-                  <option value="category">Category</option>
-                </select>
-                <select className="px-3 py-2 border rounded" value={logsFilters.status || ''} onChange={(e) => setLogsFilters(v => ({ ...v, page: 1, status: (e.target.value || undefined) as any }))}>
-                  <option value="">All Status</option>
-                  <option value="success">Success</option>
-                  <option value="failed">Failed</option>
-                  <option value="pending">Pending</option>
-                </select>
-                <input type="date" className="px-3 py-2 border rounded" value={logsFilters.startDate || ''} onChange={(e) => setLogsFilters(v => ({ ...v, page: 1, startDate: e.target.value || undefined }))} />
-                <input type="date" className="px-3 py-2 border rounded" value={logsFilters.endDate || ''} onChange={(e) => setLogsFilters(v => ({ ...v, page: 1, endDate: e.target.value || undefined }))} />
-              </div>
-              <div>
-                <button onClick={fetchLogs} className="px-3 py-2 bg-indigo-600 text-white rounded">Apply</button>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">When</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Platform</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">URL</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {logs.map((l: any) => (
-                      <tr key={l._id}>
-                        <td className="px-4 py-2 text-sm text-gray-600">{new Date(l.when || l.createdAt).toLocaleString()}</td>
-                        <td className="px-4 py-2 text-sm text-gray-900 capitalize">{l.platform}</td>
-                        <td className="px-4 py-2 text-sm text-gray-900 capitalize">{l.type}</td>
-                        <td className="px-4 py-2 text-sm text-gray-600 truncate max-w-xs" title={l.url}>{l.url}</td>
-                        <td className="px-4 py-2 text-sm text-gray-900">{l.category || '-'}</td>
-                        <td className="px-4 py-2 text-sm capitalize">{l.status}</td>
-                        <td className="px-4 py-2 text-sm">{l.action || '-'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {logsPagination.totalPages > 1 && (
-                <div className="flex items-center justify-between pt-4">
-                  <button
-                    onClick={() => { const p = Math.max(1, logsPagination.currentPage - 1); setLogsFilters(v => ({ ...v, page: p })); fetchLogs(); }}
-                    disabled={logsPagination.currentPage === 1}
-                    className="px-3 py-2 border rounded disabled:opacity-50"
-                  >
-                    Previous
-                  </button>
-                  <div className="text-sm text-gray-600">Page {logsPagination.currentPage} of {logsPagination.totalPages}</div>
-                  <button
-                    onClick={() => { const p = Math.min(logsPagination.totalPages, logsPagination.currentPage + 1); setLogsFilters(v => ({ ...v, page: p })); fetchLogs(); }}
-                    disabled={logsPagination.currentPage === logsPagination.totalPages}
-                    className="px-3 py-2 border rounded disabled:opacity-50"
-                  >
-                    Next
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Product Detail Modal */}
       {showProductDetailModal && selectedProductForView && (

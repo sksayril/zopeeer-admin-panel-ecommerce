@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, 
   Users, 
@@ -10,7 +10,10 @@ import {
   User,
   UserCircle,
   Settings,
-  Download
+  Download,
+  ChevronDown,
+  ChevronRight,
+  Bot
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -21,13 +24,20 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
   const { admin, logout, loading } = useAuth();
+  const [scrapperExpanded, setScrapperExpanded] = useState(
+    activeTab === 'scrape-products' || activeTab === 'scraping-details'
+  );
+  
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'users', label: 'Users', icon: Users },
     { id: 'vendors', label: 'Vendors', icon: Store },
     { id: 'products', label: 'Products', icon: Package },
     { id: 'categories', label: 'Categories', icon: Tag },
-    { id: 'scrape-products', label: 'Scrape Products', icon: Download },
+  ];
+
+  const scrapperItems = [
+    { id: 'scrape-products', label: 'Product Scrapper', icon: Download },
     { id: 'scraping-details', label: 'Scraping Details', icon: Download },
   ];
 
@@ -35,6 +45,13 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
     { id: 'profile', label: 'Profile', icon: UserCircle },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
+
+  // Auto-expand scrapper section when scrapper-related tab is active
+  useEffect(() => {
+    if (activeTab === 'scrape-products' || activeTab === 'scraping-details') {
+      setScrapperExpanded(true);
+    }
+  }, [activeTab]);
 
   return (
     <div className="w-64 bg-gray-900 text-white flex flex-col">
@@ -73,6 +90,54 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
             </button>
           );
         })}
+
+        {/* Scrapper Section */}
+        <div className="space-y-1">
+          {/* Scrapper Main Button */}
+          <button
+            onClick={() => setScrapperExpanded(!scrapperExpanded)}
+            className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all duration-200 ${
+              activeTab === 'scrape-products' || activeTab === 'scraping-details'
+                ? 'bg-indigo-600 text-white shadow-lg'
+                : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+            }`}
+          >
+            <div className="flex items-center space-x-3">
+              <Bot className="h-5 w-5" />
+              <span className="font-medium">Scrapper</span>
+            </div>
+            {scrapperExpanded ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+          </button>
+
+          {/* Scrapper Sub Items */}
+          {scrapperExpanded && (
+            <div className="ml-4 space-y-1">
+              {scrapperItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    className={`w-full flex items-center space-x-3 px-4 py-2 rounded-lg transition-all duration-200 ${
+                      isActive
+                        ? 'bg-indigo-500 text-white shadow-lg'
+                        : 'text-gray-400 hover:bg-gray-700 hover:text-white'
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    <span className="text-sm font-medium">{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {/* Settings Section */}
         <div className="pt-6 mt-6 border-t border-gray-700">

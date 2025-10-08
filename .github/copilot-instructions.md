@@ -37,7 +37,7 @@
 - **Hierarchical categories:** Support nested subcategories; display as expandable/collapsible trees
 
 ## Integration Points
-- **API base URL:** `https://7cvccltb-5000.inc1.devtunnels.ms/api`
+- **API base URL:** `https://z7s50012-5000.inc1.devtunnels.ms/api`
 - **Endpoints:** See `README.md` for full endpoint documentation and example payloads
 - **External dependencies:**
   - `axios` for HTTP

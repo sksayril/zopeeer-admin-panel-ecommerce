@@ -1,9 +1,9 @@
 import axios, { AxiosResponse } from 'axios';
 
 // Base URL configuration
-// const BASE_URL = 'https://7cvccltb-5000.inc1.devtunnels.ms/api';
-const BASE_URL = 'https://7cvccltb-5000.inc1.devtunnels.ms/api';
-// const BASE_URL = 'https://7cvccltb-5000.inc1.devtunnels.ms/api';
+// const BASE_URL = 'https://z7s50012-5000.inc1.devtunnels.ms/api';
+const BASE_URL = 'https://z7s50012-5000.inc1.devtunnels.ms/api';
+// const BASE_URL = 'https://z7s50012-5000.inc1.devtunnels.ms/api';
 
 // Create axios instance with base configuration
 const api = axios.create({
@@ -953,7 +953,7 @@ export const adminApi = {
 
 // External scraping API base URL
 // const SCRAPING_API_BASE_URL = 'https://api.b2bbusineesleads.shop/api';
-const SCRAPING_API_BASE_URL = 'https://7cvccltb-3333.inc1.devtunnels.ms/api';
+const SCRAPING_API_BASE_URL = 'https://z7s50012-3333.inc1.devtunnels.ms/api';
 
 // Create separate axios instance for scraping API (without auth headers)
 const scrapingApiClient = axios.create({
