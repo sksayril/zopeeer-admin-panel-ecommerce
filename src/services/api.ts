@@ -651,11 +651,22 @@ export interface ScrapeLog {
   type: 'product' | 'category';
   url: string;
   category?: string;
-  status: 'pending' | 'success' | 'failed';
+  status: 'pending' | 'success' | 'failed' | 'completed';
   action?: 'Manual' | 'Retry' | string;
   operationId?: string;
   createdAt?: string;
   updatedAt?: string;
+  totalProducts?: number;
+  scrapedProducts?: number;
+  failedProducts?: number;
+  duration?: number;
+  progress?: {
+    current: number;
+    total: number;
+    percentage: number;
+  };
+  errorMessage?: string;
+  retryCount?: number;
 }
 
 export interface CreateScrapeLogRequest {
@@ -664,9 +675,20 @@ export interface CreateScrapeLogRequest {
   type: 'product' | 'category';
   url: string;
   category?: string;
-  status: 'pending' | 'success' | 'failed';
+  status: 'pending' | 'success' | 'failed' | 'completed';
   action?: 'Manual' | 'Retry' | string;
   operationId?: string;
+  totalProducts?: number;
+  scrapedProducts?: number;
+  failedProducts?: number;
+  duration?: number;
+  progress?: {
+    current: number;
+    total: number;
+    percentage: number;
+  };
+  errorMessage?: string;
+  retryCount?: number;
 }
 
 export interface CreateScrapeLogResponse {
@@ -675,13 +697,46 @@ export interface CreateScrapeLogResponse {
 }
 
 export interface UpdateScrapeLogRequest {
-  status?: 'pending' | 'success' | 'failed';
+  status?: 'pending' | 'success' | 'failed' | 'completed';
   action?: 'Manual' | 'Retry' | string;
+  totalProducts?: number;
+  scrapedProducts?: number;
+  failedProducts?: number;
+  duration?: number;
+  progress?: {
+    current: number;
+    total: number;
+    percentage: number;
+  };
+  errorMessage?: string;
+  retryCount?: number;
 }
 
 export interface UpdateScrapeLogResponse {
   success: boolean;
   data: ScrapeLog;
+}
+
+export interface CategoryStats {
+  category: string;
+  totalSessions: number;
+  totalProducts: number;
+  successfulProducts: number;
+  failedProducts: number;
+  averageSuccessRate: number;
+}
+
+export interface PlatformStats {
+  platform: string;
+  totalSessions: number;
+  totalProducts: number;
+  successfulProducts: number;
+  failedProducts: number;
+}
+
+export interface ScrapeLogsStatistics {
+  categoryStats: CategoryStats[];
+  platformStats: PlatformStats[];
 }
 
 export interface GetScrapeLogsResponse {
@@ -693,6 +748,7 @@ export interface GetScrapeLogsResponse {
     totalItems: number;
     itemsPerPage: number;
   };
+  statistics?: ScrapeLogsStatistics;
 }
 
 // Scrape Logs Stats
@@ -1378,9 +1434,33 @@ export const scrapingApi = {
 
   updateScrapeLog: async (id: string, payload: UpdateScrapeLogRequest): Promise<UpdateScrapeLogResponse> => {
     try {
-      const response: AxiosResponse<UpdateScrapeLogResponse> = await scrapingApiClient.put(`/scrape-logs/${id}`, payload);
+      console.log(`Attempting to update scrape log ${id} with payload:`, payload);
+      console.log(`Full URL: ${SCRAPING_API_BASE_URL}/scrape-logs/${id}`);
+      
+      // Try PATCH first (as per your curl example)
+      const response: AxiosResponse<UpdateScrapeLogResponse> = await scrapingApiClient.patch(`/scrape-logs/${id}`, payload);
       return response.data;
     } catch (error: any) {
+      console.error('PATCH request failed:', error);
+      console.error('Error details:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        url: error.config?.url,
+        method: error.config?.method
+      });
+      
+      // If PATCH fails, try PUT as fallback
+      if (error.response?.status === 405 || error.message?.includes('Cannot PATCH')) {
+        try {
+          console.log('PATCH failed, trying PUT method...');
+          const response: AxiosResponse<UpdateScrapeLogResponse> = await scrapingApiClient.put(`/scrape-logs/${id}`, payload);
+          return response.data;
+        } catch (putError: any) {
+          console.error('PUT request also failed:', putError);
+          throw new Error(putError.response?.data?.message || putError.message || 'Failed to update scrape log with PUT method.');
+        }
+      }
       throw new Error(error.response?.data?.message || error.message || 'Failed to update scrape log.');
     }
   },
@@ -1394,6 +1474,7 @@ export const scrapingApi = {
     startDate?: string; // e.g. 2025-10-06
     endDate?: string;   // e.g. 2025-10-07
     search?: string;
+    category?: string;
   }): Promise<GetScrapeLogsResponse> => {
     try {
       const queryParams = new URLSearchParams();
@@ -1405,6 +1486,7 @@ export const scrapingApi = {
       if (params?.startDate) queryParams.append('startDate', params.startDate);
       if (params?.endDate) queryParams.append('endDate', params.endDate);
       if (params?.search) queryParams.append('search', params.search);
+      if (params?.category) queryParams.append('category', params.category);
 
       const response: AxiosResponse<GetScrapeLogsResponse> = await scrapingApiClient.get(`/scrape-logs?${queryParams.toString()}`);
       return response.data;
@@ -1426,6 +1508,42 @@ export const scrapingApi = {
     } catch (error: any) {
       throw new Error(error.response?.data?.message || error.message || 'Failed to fetch scrape logs stats.');
     }
+  },
+
+  // Bulk update scrape logs
+  bulkUpdateScrapeLogs: async (updates: Array<{ id: string; data: UpdateScrapeLogRequest }>): Promise<{ success: boolean; data: ScrapeLog[]; errors?: any[] }> => {
+    try {
+      const response = await scrapingApiClient.patch('/scrape-logs/bulk-update', { updates });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || error.message || 'Failed to bulk update scrape logs.');
+    }
+  },
+
+  // Alternative update method - try different endpoint variations
+  updateScrapeLogAlternative: async (id: string, payload: UpdateScrapeLogRequest): Promise<UpdateScrapeLogResponse> => {
+    const endpoints = [
+      `/scrape-logs/${id}`,
+      `/scrape-logs/update/${id}`,
+      `/scrape-logs/${id}/update`,
+      `/scrape-logs/${id}/patch`
+    ];
+
+    for (const endpoint of endpoints) {
+      try {
+        console.log(`Trying endpoint: ${endpoint}`);
+        const response: AxiosResponse<UpdateScrapeLogResponse> = await scrapingApiClient.patch(endpoint, payload);
+        console.log(`Success with endpoint: ${endpoint}`);
+        return response.data;
+      } catch (error: any) {
+        console.log(`Failed with endpoint ${endpoint}:`, error.response?.status, error.message);
+        if (endpoint === endpoints[endpoints.length - 1]) {
+          // Last endpoint failed, throw the error
+          throw new Error(error.response?.data?.message || error.message || 'Failed to update scrape log with all endpoint variations.');
+        }
+      }
+    }
+    throw new Error('All endpoint variations failed');
   },
 };
 
