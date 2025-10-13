@@ -793,11 +793,20 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
 
           {/* Table View */}
           {viewMode === 'table' && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="bg-green-50 rounded-xl shadow-sm border border-green-200 overflow-hidden">
+              <div className="px-6 py-4 border-b border-green-200">
+                <h3 className="text-lg font-semibold text-gray-900">Fetched / Scraped Data</h3>
+              </div>
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+                <table className="min-w-full divide-y divide-green-200">
+                  <thead className="bg-green-100">
                     <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        S. no
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Product ID
+                      </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Product
                       </th>
@@ -808,40 +817,67 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
                         Sub Category
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Sub-Sub Category
+                        Description
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        AI Description
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Bank Offers
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Regular Price
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Sale Price
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Discount %
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Seller
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Brand
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Product URL
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        MRP
+                        Image URL
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Selling Price
+                        Main Category
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Discount
+                        Sub Category
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
+                        Sub Sub Category
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Created
+                        Product Tag
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Updated
+                        Created Date
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Product Updated Date
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Actions
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {products.map((product) => (
-                      <tr key={product.id} className="hover:bg-gray-50">
+                  <tbody className="bg-green-50 divide-y divide-green-200">
+                    {products.map((product, index) => (
+                      <tr key={product.id} className="hover:bg-green-100">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {(currentPage - 1) * limit + index + 1}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
+                          {product.id}
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
                             <div className="flex-shrink-0 h-12 w-12">
@@ -864,9 +900,6 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
                               <div className="text-sm font-medium text-gray-900 line-clamp-1">
                                 {product.title}
                               </div>
-                              <div className="text-sm text-gray-500 line-clamp-1">
-                                {product.description}
-                              </div>
                             </div>
                           </div>
                         </td>
@@ -881,14 +914,45 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
-                            {getCategoryLevels(product).subSubCategory || '-'}
+                          <div className="text-sm text-gray-600 max-w-xs truncate" title={product.description}>
+                            {product.description || '-'}
                           </div>
-                          {getCategoryLevels(product).levels > 2 && (
-                            <div className="text-xs text-gray-500 mt-1">
-                              {getCategoryLevels(product).levels} levels deep
-                            </div>
-                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-600 max-w-xs truncate" title={product.detailedDescription}>
+                            {product.detailedDescription || '-'}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-600">
+                            {product.highlights && product.highlights.length > 0 ? (
+                              <div className="space-y-1">
+                                {product.highlights.slice(0, 2).map((highlight, idx) => (
+                                  <div key={idx} className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                                    {highlight.substring(0, 30)}...
+                                  </div>
+                                ))}
+                                {product.highlights.length > 2 && (
+                                  <div className="text-xs text-gray-500">+{product.highlights.length - 2} more</div>
+                                )}
+                              </div>
+                            ) : '-'}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900">
+                            {formatPrice(product.mrp)}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900">
+                            {formatPrice(product.srp)}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="text-sm font-medium text-green-600">
+                            {calculateDiscountPercentage(product.mrp, product.srp)}%
+                          </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           {product.vendorSite ? (
@@ -908,6 +972,11 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
                           )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">
+                            {product.attributes?.find(attr => attr.key.toLowerCase().includes('brand'))?.value || '-'}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
                           {product.productUrl ? (
                             <div className="flex items-center space-x-2">
                               <button 
@@ -916,39 +985,41 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
                                 title="Open product URL"
                               >
                                 <ExternalLink className="h-3 w-3" />
-                                <span>View</span>
+                                <span>Open link</span>
                               </button>
-                              <div className="text-xs text-gray-500 max-w-32 truncate" title={product.productUrl}>
-                                {product.productUrl.replace(/^https?:\/\//, '').substring(0, 20)}...
-                              </div>
                             </div>
                           ) : (
                             <span className="text-sm text-gray-400">-</span>
                           )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">
-                            {formatPrice(product.mrp)}
+                          {product.mainImage ? (
+                            <div className="text-sm text-blue-600 truncate max-w-32" title={product.mainImage}>
+                              {product.mainImage.replace(/^https?:\/\//, '').substring(0, 20)}...
+                            </div>
+                          ) : (
+                            <span className="text-sm text-gray-400">-</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">
+                            {getCategoryLevels(product).mainCategory || '-'}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">
-                            {formatPrice(product.srp)}
+                          <div className="text-sm text-gray-900">
+                            {getCategoryLevels(product).subCategory || '-'}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="text-sm font-medium text-green-600">
-                            {calculateDiscountPercentage(product.mrp, product.srp)}%
-                          </span>
+                          <div className="text-sm text-gray-900">
+                            {getCategoryLevels(product).subSubCategory || '-'}
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                            product.isActive 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-red-100 text-red-800'
-                          }`}>
-                            {product.isActive ? 'Active' : 'Inactive'}
-                          </span>
+                          <div className="text-sm text-gray-600">
+                            {product.keywords && product.keywords.length > 0 ? product.keywords.slice(0, 2).join(', ') : '-'}
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           <span 
@@ -977,41 +1048,39 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
                                 : formatDateTime(product.updatedAt)
                               }
                             </span>
-                            {new Date(product.updatedAt) > new Date(Date.now() - 24 * 60 * 60 * 1000) && (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                Recent
-                              </span>
-                            )}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                           <div className="flex items-center space-x-2">
-                            <button 
-                              onClick={() => handleViewProduct(product)}
-                              className="text-indigo-600 hover:text-indigo-900"
-                              title="View Product Details"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </button>
-                            <button 
-                              onClick={() => handleEditProduct(product)}
-                              className="text-indigo-600 hover:text-indigo-900"
-                              title="Edit Product"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </button>
-                            <button className="text-red-600 hover:text-red-900">
-                              <Trash2 className="h-4 w-4" />
-                            </button>
                             {product.productUrl && (
                               <button 
                                 onClick={() => openProductUrl(product.productUrl || '')}
-                                className="text-green-600 hover:text-green-900"
-                                title="View Product"
+                                className="text-green-600 hover:text-green-900 text-xs"
+                                title="Open link"
                               >
-                                <ExternalLink className="h-4 w-4" />
+                                Open link
                               </button>
                             )}
+                            <button 
+                              onClick={() => handleViewProduct(product)}
+                              className="text-indigo-600 hover:text-indigo-900 text-xs"
+                              title="View"
+                            >
+                              View
+                            </button>
+                            <button 
+                              onClick={() => handleEditProduct(product)}
+                              className="text-indigo-600 hover:text-indigo-900 text-xs"
+                              title="Edit"
+                            >
+                              Edit
+                            </button>
+                            <button 
+                              className="text-red-600 hover:text-red-900 text-xs"
+                              title="Delete"
+                            >
+                              Delete
+                            </button>
                           </div>
                         </td>
                       </tr>

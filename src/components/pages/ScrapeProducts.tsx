@@ -9,10 +9,12 @@ import {
   ExternalLink,
   Copy,
   Eye,
-  X
+  X,
+  FileSpreadsheet
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { scrapingApi, ScrapedProduct, ScrapedCategoryData, adminApi, CreateScrapeLogResponse } from '../../services/api';
+import * as XLSX from 'xlsx';
 
 // Using types from API service
 
@@ -52,11 +54,6 @@ const ScrapeProducts: React.FC = () => {
   const handleScrape = async () => {
     if (!selectedPlatform) {
       toast.error('Please select a platform');
-      return;
-    }
-
-    if (!selectedCategoryId) {
-      toast.error('Please select a category before scraping');
       return;
     }
 
@@ -450,6 +447,23 @@ const ScrapeProducts: React.FC = () => {
     return isNaN(parsedPrice) ? 0 : Math.round(parsedPrice);
   };
 
+  const formatPrice = (price: string | number): string => {
+    if (!price) return '₹0';
+    
+    // If it's already a number, format it
+    if (typeof price === 'number') {
+      return `₹${price.toLocaleString('en-IN')}`;
+    }
+    
+    // If it's a string, clean it and format it
+    const cleanPrice = price.toString().replace(/[₹$€£¥,\s]/g, '');
+    const numericPrice = parseFloat(cleanPrice);
+    
+    if (isNaN(numericPrice)) return '₹0';
+    
+    return `₹${numericPrice.toLocaleString('en-IN')}`;
+  };
+
   const getSelectedCategoryNames = () => {
     const categoryNames = [];
     
@@ -798,6 +812,302 @@ const ScrapeProducts: React.FC = () => {
     };
   };
 
+  // Export functions for scraped data
+  const exportScrapedProductToExcel = () => {
+    if (!scrapedData) {
+      toast.error('No scraped product data to export');
+      return;
+    }
+
+    try {
+      const exportData = [{
+        'Product Name': scrapedData.title,
+        'Product URL': scrapedData.url,
+        'Current Price': scrapedData.currentPrice,
+        'Original Price': scrapedData.originalPrice,
+        'Discount': scrapedData.discount,
+        'Rating': scrapedData.rating,
+        'Rating Count': scrapedData.ratingCount,
+        'Review Count': scrapedData.reviewCount,
+        'Description': scrapedData.description,
+        'Availability': scrapedData.availability,
+        'Seller Name': scrapedData.seller?.name || '',
+        'Seller Rating': scrapedData.seller?.rating || '',
+        'Main Image URL': scrapedData.images?.main?.[0]?.url || '',
+        'Additional Images': scrapedData.images?.all?.map(img => img.url).join(' | ') || '',
+        'Features': scrapedData.highlights?.join(' | ') || '',
+        'Specifications': Object.entries(scrapedData.specifications || {}).map(([key, value]) => `${key}: ${value}`).join(' | '),
+        'Offers': scrapedData.offers?.map(offer => offer.description).join(' | ') || '',
+        'Breadcrumbs': scrapedData.breadcrumbs?.map(b => b.text).join(' > ') || '',
+        'Delivery Date': scrapedData.delivery?.date || '',
+        'Delivery Time': scrapedData.delivery?.time || '',
+        'Delivery Cost': scrapedData.delivery?.cost || '',
+        'Scraped At': scrapedData.scrapedAt
+      }];
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      
+      // Set column widths
+      const colWidths = [
+        { wch: 30 }, { wch: 50 }, { wch: 15 }, { wch: 15 }, { wch: 10 },
+        { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 50 }, { wch: 15 },
+        { wch: 20 }, { wch: 12 }, { wch: 50 }, { wch: 50 }, { wch: 50 },
+        { wch: 50 }, { wch: 50 }, { wch: 30 }, { wch: 15 }, { wch: 15 },
+        { wch: 15 }, { wch: 20 }
+      ];
+      ws['!cols'] = colWidths;
+
+      XLSX.utils.book_append_sheet(wb, ws, 'Scraped Product');
+      
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      const filename = `scraped_product_${timestamp}.xlsx`;
+      
+      XLSX.writeFile(wb, filename);
+      toast.success(`Exported scraped product to ${filename}`);
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error('Failed to export scraped product to Excel');
+    }
+  };
+
+  const exportScrapedCategoryToExcel = () => {
+    if (!scrapedCategoryData) {
+      toast.error('No scraped category data to export');
+      return;
+    }
+
+    try {
+      const exportData = scrapedCategoryData.products.map((product, index) => ({
+        'S. No': index + 1,
+        'Product ID': product.productId,
+        'Product Name': product.productName,
+        'Brand': product.brand,
+        'Selling Price': product.sellingPrice,
+        'Actual Price': product.actualPrice,
+        'Discount': product.discount,
+        'Product Image': product.productImage,
+        'Product URL': product.productUrl,
+        'Rating': product.rating,
+        'Review Count': product.reviewCount,
+        'Availability': product.availability,
+        'Is Wishlisted': product.isWishlisted,
+        'Scraped At': product.scrapedAt,
+        'Category URL': scrapedCategoryData.url,
+        'Page Number': scrapedCategoryData.page,
+        'Total Products': scrapedCategoryData.totalProducts
+      }));
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      
+      // Set column widths
+      const colWidths = [
+        { wch: 8 }, { wch: 15 }, { wch: 30 }, { wch: 15 }, { wch: 15 },
+        { wch: 15 }, { wch: 10 }, { wch: 50 }, { wch: 50 }, { wch: 10 },
+        { wch: 12 }, { wch: 15 }, { wch: 10 }, { wch: 20 }, { wch: 50 },
+        { wch: 8 }, { wch: 12 }
+      ];
+      ws['!cols'] = colWidths;
+
+      XLSX.utils.book_append_sheet(wb, ws, 'Scraped Category Products');
+      
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      const filename = `scraped_category_${timestamp}.xlsx`;
+      
+      XLSX.writeFile(wb, filename);
+      toast.success(`Exported ${scrapedCategoryData.products.length} products to ${filename}`);
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error('Failed to export scraped category to Excel');
+    }
+  };
+
+  const exportDetailedProductsToExcel = () => {
+    const detailedProductsList = Object.values(detailedProducts);
+    if (detailedProductsList.length === 0) {
+      toast.error('No detailed products to export');
+      return;
+    }
+
+    try {
+      const exportData = detailedProductsList.map((product, index) => ({
+        'S. No': index + 1,
+        'Product ID': product.id,
+        'Product Name': product.title,
+        'Product URL': product.url,
+        'Current Price': product.currentPrice,
+        'Original Price': product.originalPrice,
+        'Discount': product.discount,
+        'Rating': product.rating,
+        'Rating Count': product.ratingCount,
+        'Review Count': product.reviewCount,
+        'Description': product.description,
+        'Availability': product.availability,
+        'Seller Name': product.seller?.name || '',
+        'Seller Rating': product.seller?.rating || '',
+        'Main Image URL': product.images?.main?.[0]?.url || '',
+        'Additional Images': product.images?.all?.map(img => img.url).join(' | ') || '',
+        'Features': product.highlights?.join(' | ') || '',
+        'Specifications': Object.entries(product.specifications || {}).map(([key, value]) => `${key}: ${value}`).join(' | '),
+        'Offers': product.offers?.map(offer => offer.description).join(' | ') || '',
+        'Breadcrumbs': product.breadcrumbs?.map(b => b.text).join(' > ') || '',
+        'Delivery Date': product.delivery?.date || '',
+        'Delivery Time': product.delivery?.time || '',
+        'Delivery Cost': product.delivery?.cost || '',
+        'Scraped At': product.scrapedAt
+      }));
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      
+      // Set column widths
+      const colWidths = [
+        { wch: 8 }, { wch: 15 }, { wch: 30 }, { wch: 50 }, { wch: 15 },
+        { wch: 15 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 12 },
+        { wch: 50 }, { wch: 15 }, { wch: 20 }, { wch: 12 }, { wch: 50 },
+        { wch: 50 }, { wch: 50 }, { wch: 50 }, { wch: 50 }, { wch: 50 },
+        { wch: 30 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 20 }
+      ];
+      ws['!cols'] = colWidths;
+
+      XLSX.utils.book_append_sheet(wb, ws, 'Detailed Scraped Products');
+      
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      const filename = `detailed_scraped_products_${timestamp}.xlsx`;
+      
+      XLSX.writeFile(wb, filename);
+      toast.success(`Exported ${detailedProductsList.length} detailed products to ${filename}`);
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error('Failed to export detailed products to Excel');
+    }
+  };
+
+  // Export function for database insert format
+  const exportDatabaseInsertFormat = () => {
+    const detailedProductsList = Object.values(detailedProducts);
+    if (detailedProductsList.length === 0) {
+      toast.error('No detailed products to export in database format');
+      return;
+    }
+
+    try {
+      const exportData = detailedProductsList.map((detailedProduct, index) => {
+        const categoryProduct = scrapedCategoryData?.products.find(p => p.productId === detailedProduct.id);
+        
+        // Get table data using the same function used for database insertion
+        const tableData = getTableDataForProduct(detailedProduct);
+        if (!tableData) {
+          return null;
+        }
+
+        // Create the exact same data structure that gets sent to the database
+        const productData = {
+          ...tableData,
+          mrp: parsePrice(detailedProduct.originalPrice || categoryProduct?.actualPrice || 0),
+          srp: parsePrice(detailedProduct.currentPrice || categoryProduct?.sellingPrice || 0),
+          mainImage: detailedProduct.images?.thumbnails?.[0]?.url || categoryProduct?.productImage,
+          additionalImages: detailedProduct.images?.thumbnails?.slice(1, 4).map((img: any) => img.url) || [],
+          productUrl: detailedProduct.url || categoryProduct?.productUrl || '',
+          // Add category hierarchy information
+          categoryHierarchy: {
+            mainCategory: tableData.categoryId ? categories.find(cat => cat.id === tableData.categoryId)?.name : null,
+            subCategory: tableData.subcategoryId ? availableSubcategories.find(cat => cat.id === tableData.subcategoryId)?.name : null,
+            subSubCategory: tableData.categoryId !== tableData.subcategoryId ? availableSubSubcategories.find(cat => cat.id === tableData.categoryId)?.name : null,
+            fullPath: ((detailedProduct as any).assignedCategory?.categoryPath || getSelectedCategoryNames()).join(' > ')
+          },
+          keywords: [
+            ...detailedProduct.title.split(' ').slice(0, 3),
+            ...detailedProduct.breadcrumbs?.map((b: any) => b.text) || [],
+            ...((detailedProduct as any).assignedCategory?.categoryPath || getSelectedCategoryNames())
+          ].filter(Boolean)
+        };
+
+        // Flatten the data for Excel export while maintaining the exact structure
+        return {
+          'S. No': index + 1,
+          'Product ID': detailedProduct.id,
+          'Title': productData.title,
+          'MRP': productData.mrp,
+          'SRP': productData.srp,
+          'Description': productData.description,
+          'Short Description': productData.shortDescription,
+          'Detailed Description': productData.detailedDescription,
+          'Features': productData.features?.join(' | ') || '',
+          'Specifications': productData.specifications?.map(spec => `${spec.key}: ${spec.value}`).join(' | ') || '',
+          'Highlights': productData.highlights?.join(' | ') || '',
+          'Main Image': productData.mainImage,
+          'Additional Images': productData.additionalImages?.join(' | ') || '',
+          'Product URL': productData.productUrl,
+          'Vendor Site': productData.vendorSite,
+          'Category ID': productData.categoryId,
+          'Subcategory ID': productData.subcategoryId,
+          'Category Path': productData.categoryPath?.join(' > ') || '',
+          'Attributes': productData.attributes?.map(attr => `${attr.key}: ${attr.value}`).join(' | ') || '',
+          'Keywords': productData.keywords?.join(', ') || '',
+          'Category Hierarchy - Main Category': productData.categoryHierarchy?.mainCategory || '',
+          'Category Hierarchy - Sub Category': productData.categoryHierarchy?.subCategory || '',
+          'Category Hierarchy - Sub Sub Category': productData.categoryHierarchy?.subSubCategory || '',
+          'Category Hierarchy - Full Path': productData.categoryHierarchy?.fullPath || '',
+          'Is Active': true,
+          'Profit Margin': '0%',
+          'Created By': 'Scraper',
+          'Created At': new Date().toISOString(),
+          'Updated At': new Date().toISOString()
+        };
+      }).filter(Boolean);
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      
+      // Set column widths for better readability
+      const colWidths = [
+        { wch: 8 },   // S. No
+        { wch: 15 },  // Product ID
+        { wch: 30 },  // Title
+        { wch: 12 },  // MRP
+        { wch: 12 },  // SRP
+        { wch: 50 },  // Description
+        { wch: 40 },  // Short Description
+        { wch: 50 },  // Detailed Description
+        { wch: 50 },  // Features
+        { wch: 50 },  // Specifications
+        { wch: 50 },  // Highlights
+        { wch: 50 },  // Main Image
+        { wch: 50 },  // Additional Images
+        { wch: 50 },  // Product URL
+        { wch: 15 },  // Vendor Site
+        { wch: 15 },  // Category ID
+        { wch: 15 },  // Subcategory ID
+        { wch: 30 },  // Category Path
+        { wch: 50 },  // Attributes
+        { wch: 30 },  // Keywords
+        { wch: 20 },  // Category Hierarchy - Main Category
+        { wch: 20 },  // Category Hierarchy - Sub Category
+        { wch: 20 },  // Category Hierarchy - Sub Sub Category
+        { wch: 30 },  // Category Hierarchy - Full Path
+        { wch: 10 },  // Is Active
+        { wch: 12 },  // Profit Margin
+        { wch: 15 },  // Created By
+        { wch: 20 },  // Created At
+        { wch: 20 }   // Updated At
+      ];
+      ws['!cols'] = colWidths;
+
+      XLSX.utils.book_append_sheet(wb, ws, 'Database Insert Format');
+      
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      const filename = `database_insert_format_${timestamp}.xlsx`;
+      
+      XLSX.writeFile(wb, filename);
+      toast.success(`Exported ${exportData.length} products in database insert format to ${filename}`);
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error('Failed to export database insert format to Excel');
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -956,18 +1266,25 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
       {(() => { /* no render */ return null; })()}
       {/* Scraping Form */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Scraping Configuration</h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-6">Scraping Configuration</h2>
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Platform Selection */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Select Platform
-            </label>
+        {/* Step 1: Platform Selection */}
+        <div className="mb-8">
+          <div className="flex items-center space-x-3 mb-4">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold ${
+              selectedPlatform ? 'bg-green-500' : 'bg-gray-300'
+            }`}>
+              {selectedPlatform ? '✓' : '1'}
+            </div>
+            <h3 className="text-lg font-medium text-gray-900">Step 1: Select Platform</h3>
+          </div>
+          
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-3">Choose Platform</label>
             <select
               value={selectedPlatform}
               onChange={(e) => setSelectedPlatform(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+              className="w-full max-w-md px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
             >
               <option value="">Choose Platform</option>
               {platforms.map((platform) => (
@@ -977,110 +1294,141 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
               ))}
             </select>
           </div>
-
-          {/* Scrape Type Selection */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Scrape Type
-            </label>
-            <select
-              value={scrapeType}
-              onChange={(e) => setScrapeType(e.target.value as 'product' | 'category')}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
-            >
-              <option value="product">Product</option>
-              <option value="category">Category</option>
-            </select>
-          </div>
-
-          {/* Platform Preview */}
+          
           {selectedPlatform && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Selected Platform
-              </label>
-              <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg border">
-                <div className={`w-8 h-8 ${platforms.find(p => p.value === selectedPlatform)?.color} rounded-full`}></div>
-                <span className="text-sm font-medium text-gray-700">
-                  {platforms.find(p => p.value === selectedPlatform)?.label}
+            <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+              <div className="flex items-center space-x-2">
+                <CheckCircle className="h-5 w-5 text-green-600" />
+                <span className="text-sm font-medium text-green-800">
+                  Selected: {platforms.find(p => p.value === selectedPlatform)?.label}
                 </span>
               </div>
             </div>
           )}
         </div>
 
-        {/* URL Input Section */}
+        {/* Step 2: Scrape Type Selection */}
         {selectedPlatform && (
-          <div className={`mt-6 p-4 rounded-lg border ${
-            scrapeType === 'product' 
-              ? 'bg-blue-50 border-blue-200' 
-              : 'bg-green-50 border-green-200'
-          }`}>
-            <div className="flex items-center space-x-2 mb-3">
-              {scrapeType === 'product' ? (
-                <Package className="h-5 w-5 text-blue-600" />
-              ) : (
-                <Tag className="h-5 w-5 text-green-600" />
-              )}
-              <h3 className={`text-sm font-medium ${
-                scrapeType === 'product' ? 'text-blue-900' : 'text-green-900'
+          <div className="mb-8">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold ${
+                scrapeType ? 'bg-green-500' : 'bg-gray-300'
               }`}>
-                {scrapeType === 'product' ? 'Product URL Configuration' : 'Category URL Configuration'}
-              </h3>
-            </div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Enter {platforms.find(p => p.value === selectedPlatform)?.label} {scrapeType === 'product' ? 'Product' : 'Category'} URL
-            </label>
-            <div className="flex space-x-3">
-              <div className="flex-1">
-                <input
-                  type="url"
-                  value={productUrl}
-                  onChange={(e) => setProductUrl(e.target.value)}
-                  placeholder={
-                    scrapeType === 'product' 
-                      ? `https://www.${selectedPlatform}.com/product/...`
-                      : `https://www.${selectedPlatform}.com/category/...`
-                  }
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                />
+                {scrapeType ? '✓' : '2'}
               </div>
-              {scrapeType === 'category' && (
-                <div className="w-24">
+              <h3 className="text-lg font-medium text-gray-900">Step 2: Select Scrape Type</h3>
+            </div>
+            
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-3">Choose Scrape Type</label>
+              <select
+                value={scrapeType}
+                onChange={(e) => setScrapeType(e.target.value as 'product' | 'category')}
+                className="w-full max-w-md px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+              >
+                <option value="">Choose Scrape Type</option>
+                <option value="product">Product - Scrape individual product details</option>
+                <option value="category">Category - Scrape multiple products from category</option>
+              </select>
+            </div>
+            
+            {scrapeType && (
+              <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <div className="flex items-center space-x-2">
+                  <CheckCircle className="h-5 w-5 text-green-600" />
+                  <span className="text-sm font-medium text-green-800">
+                    Selected: {scrapeType === 'product' ? 'Product Scraping' : 'Category Scraping'}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+
+        {/* Step 3: URL Input */}
+        {selectedPlatform && scrapeType && (
+          <div className="mb-8">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold ${
+                productUrl ? 'bg-green-500' : 'bg-gray-300'
+              }`}>
+                {productUrl ? '✓' : '3'}
+              </div>
+              <h3 className="text-lg font-medium text-gray-900">Step 3: Enter URL</h3>
+            </div>
+            
+            <div className={`p-4 rounded-lg border ${
+              scrapeType === 'product' 
+                ? 'bg-blue-50 border-blue-200' 
+                : 'bg-green-50 border-green-200'
+            }`}>
+              <div className="flex items-center space-x-2 mb-3">
+                {scrapeType === 'product' ? (
+                  <Package className="h-5 w-5 text-blue-600" />
+                ) : (
+                  <Tag className="h-5 w-5 text-green-600" />
+                )}
+                <h3 className={`text-sm font-medium ${
+                  scrapeType === 'product' ? 'text-blue-900' : 'text-green-900'
+                }`}>
+                  {scrapeType === 'product' ? 'Product URL Configuration' : 'Category URL Configuration'}
+                </h3>
+              </div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Enter {platforms.find(p => p.value === selectedPlatform)?.label} {scrapeType === 'product' ? 'Product' : 'Category'} URL
+              </label>
+              <div className="flex space-x-3">
+                <div className="flex-1">
                   <input
-                    type="number"
-                    min="1"
-                    value={pageNumber}
-                    onChange={(e) => setPageNumber(parseInt(e.target.value) || 1)}
-                    placeholder="Page"
-                    className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-center"
-                    title="Page number to scrape"
+                    type="url"
+                    value={productUrl}
+                    onChange={(e) => setProductUrl(e.target.value)}
+                    placeholder={
+                      scrapeType === 'product' 
+                        ? `https://www.${selectedPlatform}.com/product/...`
+                        : `https://www.${selectedPlatform}.com/category/...`
+                    }
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                   />
                 </div>
-              )}
-              <button
-                onClick={() => copyToClipboard(productUrl)}
-                disabled={!productUrl}
-                className="px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Copy URL"
-              >
-                <Copy className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="mt-2">
-              <p className="text-xs text-gray-500">
-                Paste the complete {scrapeType} URL from {platforms.find(p => p.value === selectedPlatform)?.label}
-              </p>
-              {scrapeType === 'category' && (
-                <div className="mt-1">
-                  <p className="text-xs text-green-600">
-                    💡 Category scraping will extract multiple products from the category page
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    📄 Specify page number to scrape specific page (default: page 1)
-                  </p>
-                </div>
-              )}
+                {scrapeType === 'category' && (
+                  <div className="w-24">
+                    <input
+                      type="number"
+                      min="1"
+                      value={pageNumber}
+                      onChange={(e) => setPageNumber(parseInt(e.target.value) || 1)}
+                      placeholder="Page"
+                      className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-center"
+                      title="Page number to scrape"
+                    />
+                  </div>
+                )}
+                <button
+                  onClick={() => copyToClipboard(productUrl)}
+                  disabled={!productUrl}
+                  className="px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Copy URL"
+                >
+                  <Copy className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="mt-2">
+                <p className="text-xs text-gray-500">
+                  Paste the complete {scrapeType} URL from {platforms.find(p => p.value === selectedPlatform)?.label}
+                </p>
+                {scrapeType === 'category' && (
+                  <div className="mt-1">
+                    <p className="text-xs text-green-600">
+                      💡 Category scraping will extract multiple products from the category page
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      📄 Specify page number to scrape specific page (default: page 1)
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -1217,33 +1565,66 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
           </div>
         )}
 
-        {/* Action Buttons */}
-        <div className="flex space-x-3 mt-6">
-          <button
-            onClick={handleScrape}
-            disabled={isLoading || !selectedPlatform || !productUrl || !selectedCategoryId}
-            className="flex items-center space-x-2 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isLoading ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : (
+        {/* Step 4: Start Scraping */}
+        {selectedPlatform && scrapeType && productUrl && (
+          <div className="mb-8">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold bg-indigo-500">
+                4
+              </div>
+              <h3 className="text-lg font-medium text-gray-900">Step 4: Start Scraping</h3>
+            </div>
+            
+            <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-medium text-indigo-900">Ready to Scrape!</h4>
+                  <p className="text-sm text-indigo-700 mt-1">
+                    All configuration is complete. Click the button below to start scraping.
+                  </p>
+                </div>
+                <button
+                  onClick={handleScrape}
+                  disabled={isLoading}
+                  className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      <span>Scraping...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="h-5 w-5" />
+                      <span>Start Scraping</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Action Buttons - Fallback for incomplete configuration */}
+        {(!selectedPlatform || !scrapeType || !productUrl) && (
+          <div className="flex space-x-3 mt-6">
+            <button
+              onClick={handleScrape}
+              disabled={isLoading || !selectedPlatform || !productUrl}
+              className="flex items-center space-x-2 px-6 py-3 bg-gray-400 text-white rounded-lg cursor-not-allowed"
+            >
               <Download className="h-5 w-5" />
-            )}
-            <span>
-              {isLoading 
-                ? `Scraping ${scrapeType}...` 
-                : `Start ${scrapeType === 'product' ? 'Product' : 'Category'} Scraping`
-              }
-            </span>
-          </button>
-          
-          <button
-            onClick={resetForm}
-            className="px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors duration-200"
-          >
-            Reset
-          </button>
-        </div>
+              <span>Complete Configuration First</span>
+            </button>
+            
+            <button
+              onClick={resetForm}
+              className="px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors duration-200"
+            >
+              Reset
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Error Display */}
@@ -1270,6 +1651,13 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
               </p>
             </div>
             <div className="flex items-center space-x-4">
+              <button
+                onClick={exportScrapedCategoryToExcel}
+                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                <span>Export Excel</span>
+              </button>
               <div className="flex items-center space-x-2">
                 <CheckCircle className="h-5 w-5 text-green-500" />
                 <span className="text-sm text-green-600 font-medium">
@@ -1514,9 +1902,27 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
           {/* Detailed Products Display */}
           {Object.keys(detailedProducts).length > 0 && (
             <div className="mt-8">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                Detailed Product Data ({Object.keys(detailedProducts).length} products)
-              </h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Detailed Product Data ({Object.keys(detailedProducts).length} products)
+                </h3>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={exportDetailedProductsToExcel}
+                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
+                  >
+                    <FileSpreadsheet className="h-4 w-4" />
+                    <span>Export Excel</span>
+                  </button>
+                  <button
+                    onClick={exportDatabaseInsertFormat}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                  >
+                    <FileSpreadsheet className="h-4 w-4" />
+                    <span>Export DB Format</span>
+                  </button>
+                </div>
+              </div>
               <div className="space-y-4">
                 {Object.entries(detailedProducts).map(([productId, detailedProduct]) => {
                   const categoryProduct = scrapedCategoryData.products.find(p => p.productId === productId);
@@ -1536,9 +1942,9 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
                           <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                             <div>
                               <span className="font-medium text-gray-700">Price:</span>
-                              <span className="ml-2 text-green-600">₹{detailedProduct.currentPrice}</span>
+                              <span className="ml-2 text-green-600">{formatPrice(detailedProduct.currentPrice)}</span>
                               {detailedProduct.originalPrice && (
-                                <span className="ml-2 text-gray-500 line-through">₹{detailedProduct.originalPrice}</span>
+                                <span className="ml-2 text-gray-500 line-through">{formatPrice(detailedProduct.originalPrice)}</span>
                               )}
                             </div>
                             <div>
@@ -1638,6 +2044,13 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
             </div>
             <div className="flex items-center space-x-4">
               <button
+                onClick={exportScrapedProductToExcel}
+                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                <span>Export Excel</span>
+              </button>
+              <button
                 onClick={() => setShowTableView(!showTableView)}
                 className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors duration-200"
               >
@@ -1705,10 +2118,10 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
                 </div>
 
                 <div className="flex items-center space-x-4">
-                  <span className="text-2xl font-bold text-green-600">{scrapedData.currentPrice}</span>
+                  <span className="text-2xl font-bold text-green-600">{formatPrice(scrapedData.currentPrice)}</span>
                   {scrapedData.originalPrice && (
                     <>
-                      <span className="text-lg text-gray-500 line-through">{scrapedData.originalPrice}</span>
+                      <span className="text-lg text-gray-500 line-through">{formatPrice(scrapedData.originalPrice)}</span>
                       <span className="px-2 py-1 bg-red-100 text-red-600 text-sm font-medium rounded">
                         {scrapedData.discount}
                       </span>
@@ -2181,11 +2594,11 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
                     </div>
                     <div>
                       <span className="font-medium text-gray-700">Current Price:</span>
-                      <span className="text-green-600 font-bold text-lg">₹{selectedProductForView.currentPrice}</span>
+                      <span className="text-green-600 font-bold text-lg">{formatPrice(selectedProductForView.currentPrice)}</span>
                     </div>
                     <div>
                       <span className="font-medium text-gray-700">Original Price:</span>
-                      <span className="text-gray-500 line-through">₹{selectedProductForView.originalPrice}</span>
+                      <span className="text-gray-500 line-through">{formatPrice(selectedProductForView.originalPrice)}</span>
                     </div>
                     <div>
                       <span className="font-medium text-gray-700">Discount:</span>
