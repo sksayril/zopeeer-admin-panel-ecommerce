@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Plus, Edit, Trash2, Eye, Package, Grid3X3, List, Loader2, ExternalLink, Upload, Download, FileText, X, CheckCircle, AlertCircle, Eye as PreviewIcon } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, Eye, Package, Grid3X3, List, Loader2, ExternalLink, Upload, Download, FileText, X, CheckCircle, AlertCircle, Eye as PreviewIcon, Calendar, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
 import { adminApi, Product, BulkUploadResponse } from '../../services/api';
 import toast from 'react-hot-toast';
 import ViewDataModal from '../ViewDataModal';
@@ -26,6 +26,21 @@ const Products: React.FC = () => {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   
+  // Date filtering states
+  const [dateFilters, setDateFilters] = useState({
+    createdFrom: '',
+    createdTo: '',
+    updatedFrom: '',
+    updatedTo: ''
+  });
+  const [showAdvancedDatePicker, setShowAdvancedDatePicker] = useState(false);
+  const [selectedPreset, setSelectedPreset] = useState<string>('');
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedDates, setSelectedDates] = useState<{
+    start: Date | null;
+    end: Date | null;
+  }>({ start: null, end: null });
+  
   // Bulk upload states
   const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -40,13 +55,153 @@ const Products: React.FC = () => {
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [isParsing, setIsParsing] = useState(false);
 
-  const fetchProducts = async (page: number = 1, search: string = '') => {
+
+  // Date preset options
+  const datePresets = [
+    { label: 'Today', value: 'today' },
+    { label: 'Yesterday', value: 'yesterday' },
+    { label: 'Last 7 days', value: 'last7days' },
+    { label: 'Last 14 days', value: 'last14days' },
+    { label: 'Last 30 days', value: 'last30days' },
+    { label: 'This week', value: 'thisweek' },
+    { label: 'Last week', value: 'lastweek' },
+    { label: 'This month', value: 'thismonth' },
+    { label: 'Last month', value: 'lastmonth' },
+    { label: 'This year', value: 'thisyear' },
+    { label: 'Last year', value: 'lastyear' }
+  ];
+
+  // Helper function to get date range from preset
+  const getDateRangeFromPreset = (preset: string) => {
+    const today = new Date();
+    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
+
+    switch (preset) {
+      case 'today':
+        return {
+          start: startOfDay.toISOString().split('T')[0],
+          end: endOfDay.toISOString().split('T')[0]
+        };
+      case 'yesterday':
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        return {
+          start: yesterday.toISOString().split('T')[0],
+          end: yesterday.toISOString().split('T')[0]
+        };
+      case 'last7days':
+        const last7Days = new Date(today);
+        last7Days.setDate(last7Days.getDate() - 7);
+        return {
+          start: last7Days.toISOString().split('T')[0],
+          end: today.toISOString().split('T')[0]
+        };
+      case 'last14days':
+        const last14Days = new Date(today);
+        last14Days.setDate(last14Days.getDate() - 14);
+        return {
+          start: last14Days.toISOString().split('T')[0],
+          end: today.toISOString().split('T')[0]
+        };
+      case 'last30days':
+        const last30Days = new Date(today);
+        last30Days.setDate(last30Days.getDate() - 30);
+        return {
+          start: last30Days.toISOString().split('T')[0],
+          end: today.toISOString().split('T')[0]
+        };
+      case 'thisweek':
+        const startOfWeek = new Date(today);
+        startOfWeek.setDate(today.getDate() - today.getDay());
+        return {
+          start: startOfWeek.toISOString().split('T')[0],
+          end: today.toISOString().split('T')[0]
+        };
+      case 'lastweek':
+        const lastWeekStart = new Date(today);
+        lastWeekStart.setDate(today.getDate() - today.getDay() - 7);
+        const lastWeekEnd = new Date(today);
+        lastWeekEnd.setDate(today.getDate() - today.getDay() - 1);
+        return {
+          start: lastWeekStart.toISOString().split('T')[0],
+          end: lastWeekEnd.toISOString().split('T')[0]
+        };
+      case 'thismonth':
+        const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+        return {
+          start: startOfMonth.toISOString().split('T')[0],
+          end: today.toISOString().split('T')[0]
+        };
+      case 'lastmonth':
+        const lastMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
+        return {
+          start: lastMonthStart.toISOString().split('T')[0],
+          end: lastMonthEnd.toISOString().split('T')[0]
+        };
+      case 'thisyear':
+        const startOfYear = new Date(today.getFullYear(), 0, 1);
+        return {
+          start: startOfYear.toISOString().split('T')[0],
+          end: today.toISOString().split('T')[0]
+        };
+      case 'lastyear':
+        const lastYearStart = new Date(today.getFullYear() - 1, 0, 1);
+        const lastYearEnd = new Date(today.getFullYear() - 1, 11, 31);
+        return {
+          start: lastYearStart.toISOString().split('T')[0],
+          end: lastYearEnd.toISOString().split('T')[0]
+        };
+      default:
+        return { start: '', end: '' };
+    }
+  };
+
+  // Helper function to format date for display
+  const formatDateDisplay = (date: Date) => {
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  };
+
+  // Helper function to get calendar days
+  const getCalendarDays = (date: Date) => {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startingDayOfWeek = firstDay.getDay();
+
+    const days = [];
+    
+    // Add empty cells for days before the first day of the month
+    for (let i = 0; i < startingDayOfWeek; i++) {
+      days.push(null);
+    }
+    
+    // Add days of the month
+    for (let day = 1; day <= daysInMonth; day++) {
+      days.push(new Date(year, month, day));
+    }
+    
+    return days;
+  };
+
+  const fetchProducts = async (page: number = 1, search: string = '', filters?: typeof dateFilters) => {
     try {
       setLoading(true);
       const response = await adminApi.getProducts({
         page,
         limit,
-        search: search || undefined
+        search: search || undefined,
+        createdFrom: filters?.createdFrom || undefined,
+        createdTo: filters?.createdTo || undefined,
+        updatedFrom: filters?.updatedFrom || undefined,
+        updatedTo: filters?.updatedTo || undefined
       });
       
       setProducts(response.data.products);
@@ -61,16 +216,94 @@ const Products: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchProducts(1, searchTerm);
+    fetchProducts(1, searchTerm, dateFilters);
   }, []);
 
   const handleSearch = (value: string) => {
     setSearchTerm(value);
-    fetchProducts(1, value);
+    fetchProducts(1, value, dateFilters);
   };
 
   const handlePageChange = (page: number) => {
-    fetchProducts(page, searchTerm);
+    fetchProducts(page, searchTerm, dateFilters);
+  };
+
+  const handleDateFilterChange = (field: keyof typeof dateFilters, value: string) => {
+    setDateFilters(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const applyDateFilters = () => {
+    fetchProducts(1, searchTerm, dateFilters);
+  };
+
+  const clearDateFilters = () => {
+    setDateFilters({
+      createdFrom: '',
+      createdTo: '',
+      updatedFrom: '',
+      updatedTo: ''
+    });
+    setSelectedPreset('');
+    setSelectedDates({ start: null, end: null });
+    fetchProducts(1, searchTerm, {
+      createdFrom: '',
+      createdTo: '',
+      updatedFrom: '',
+      updatedTo: ''
+    });
+  };
+
+  const handlePresetSelect = (preset: string) => {
+    setSelectedPreset(preset);
+    const dateRange = getDateRangeFromPreset(preset);
+    setDateFilters(prev => ({
+      ...prev,
+      createdFrom: dateRange.start,
+      createdTo: dateRange.end
+    }));
+  };
+
+  const handleCustomDateSelect = (date: Date) => {
+    if (!selectedDates.start || (selectedDates.start && selectedDates.end)) {
+      // Start new selection
+      setSelectedDates({ start: date, end: null });
+    } else if (selectedDates.start && !selectedDates.end) {
+      // Complete selection
+      const start = selectedDates.start;
+      if (date < start) {
+        setSelectedDates({ start: date, end: start });
+      } else {
+        setSelectedDates({ start, end: date });
+      }
+    }
+  };
+
+  const applyCustomDateRange = () => {
+    if (selectedDates.start && selectedDates.end) {
+      const startDate = selectedDates.start.toISOString().split('T')[0];
+      const endDate = selectedDates.end.toISOString().split('T')[0];
+      setDateFilters(prev => ({
+        ...prev,
+        createdFrom: startDate,
+        createdTo: endDate
+      }));
+      setShowAdvancedDatePicker(false);
+    }
+  };
+
+  const navigateMonth = (direction: 'prev' | 'next') => {
+    setCurrentMonth(prev => {
+      const newMonth = new Date(prev);
+      if (direction === 'prev') {
+        newMonth.setMonth(newMonth.getMonth() - 1);
+      } else {
+        newMonth.setMonth(newMonth.getMonth() + 1);
+      }
+      return newMonth;
+    });
   };
 
   const formatPrice = (price: number) => {
@@ -110,7 +343,7 @@ const Products: React.FC = () => {
     };
   };
 
-  const formatDate = (dateString: string) => {
+  const formatDateString = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-IN', {
       year: 'numeric',
       month: 'short',
@@ -313,7 +546,7 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
       if (result.success) {
         toast.success(result.message || 'Products uploaded successfully!');
         // Refresh the products list
-        fetchProducts(currentPage, searchTerm);
+        fetchProducts(currentPage, searchTerm, dateFilters);
       } else {
         toast.error(result.message || 'Upload failed');
       }
@@ -427,6 +660,8 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
               <List className="h-4 w-4" />
             </button>
           </div>
+
+
           
           <button 
             onClick={() => setBulkUploadOpen(true)}
@@ -630,10 +865,12 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
         </div>
       )}
 
-      {/* Search */}
+      {/* Search and Filters */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Existing Products</h3>
-        <div className="relative">
+        
+        {/* Search Input */}
+        <div className="relative mb-4">
           <Search className="h-5 w-5 text-gray-400 absolute left-3 top-3" />
           <input
             type="text"
@@ -642,6 +879,206 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
             onChange={(e) => handleSearch(e.target.value)}
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
           />
+        </div>
+
+        {/* Advanced Date Filters */}
+        <div className="border-t border-gray-200 pt-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-2">
+              <Filter className="h-5 w-5 text-gray-500" />
+              <span className="text-sm font-medium text-gray-700">Date Filters</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setShowAdvancedDatePicker(!showAdvancedDatePicker)}
+                className="flex items-center space-x-1 text-sm text-indigo-600 hover:text-indigo-700"
+              >
+                <Calendar className="h-4 w-4" />
+                <span>{showAdvancedDatePicker ? 'Hide Advanced Picker' : 'Show Advanced Picker'}</span>
+              </button>
+              <button
+                onClick={clearDateFilters}
+                className="flex items-center space-x-1 text-sm text-gray-600 hover:text-gray-700"
+              >
+                <X className="h-4 w-4" />
+                <span>Clear All</span>
+              </button>
+            </div>
+          </div>
+
+          {showAdvancedDatePicker && (
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Preset Options */}
+                <div className="lg:col-span-1">
+                  <h4 className="text-sm font-medium text-gray-700 mb-3">Recently Used</h4>
+                  <div className="space-y-1 max-h-64 overflow-y-auto">
+                    {datePresets.map((preset) => (
+                      <label
+                        key={preset.value}
+                        className="flex items-center space-x-2 p-2 hover:bg-gray-100 rounded cursor-pointer"
+                      >
+                        <input
+                          type="radio"
+                          name="datePreset"
+                          value={preset.value}
+                          checked={selectedPreset === preset.value}
+                          onChange={() => handlePresetSelect(preset.value)}
+                          className="text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span className="text-sm text-gray-700">{preset.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Calendar */}
+                <div className="lg:col-span-2">
+                  <div className="bg-white rounded-lg border border-gray-200 p-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <button
+                        onClick={() => navigateMonth('prev')}
+                        className="p-1 hover:bg-gray-100 rounded"
+                      >
+                        <ChevronLeft className="h-5 w-5 text-gray-600" />
+                      </button>
+                      <h3 className="text-lg font-medium text-gray-900">
+                        {currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                      </h3>
+                      <button
+                        onClick={() => navigateMonth('next')}
+                        className="p-1 hover:bg-gray-100 rounded"
+                      >
+                        <ChevronRight className="h-5 w-5 text-gray-600" />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-7 gap-1 mb-2">
+                      {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                        <div key={day} className="text-center text-xs font-medium text-gray-500 py-2">
+                          {day}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-7 gap-1">
+                      {getCalendarDays(currentMonth).map((day, index) => {
+                        if (!day) {
+                          return <div key={index} className="h-8"></div>;
+                        }
+
+                        const isSelected = selectedDates.start && selectedDates.end &&
+                          day >= selectedDates.start && day <= selectedDates.end;
+                        const isStart = selectedDates.start && day.getTime() === selectedDates.start.getTime();
+                        const isEnd = selectedDates.end && day.getTime() === selectedDates.end.getTime();
+                        const isToday = day.toDateString() === new Date().toDateString();
+
+                        return (
+                          <button
+                            key={day.getTime()}
+                            onClick={() => handleCustomDateSelect(day)}
+                            className={`h-8 w-8 text-sm rounded-full flex items-center justify-center hover:bg-indigo-100 ${
+                              isSelected
+                                ? 'bg-indigo-600 text-white'
+                                : isStart || isEnd
+                                ? 'bg-indigo-500 text-white'
+                                : isToday
+                                ? 'bg-indigo-100 text-indigo-700 font-medium'
+                                : 'text-gray-700 hover:bg-gray-100'
+                            }`}
+                          >
+                            {day.getDate()}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {selectedDates.start && selectedDates.end && (
+                      <div className="mt-4 p-3 bg-indigo-50 rounded-lg">
+                        <div className="text-sm text-indigo-700">
+                          <strong>Selected Range:</strong> {formatDateDisplay(selectedDates.start)} - {formatDateDisplay(selectedDates.end)}
+                        </div>
+                        <button
+                          onClick={applyCustomDateRange}
+                          className="mt-2 px-3 py-1 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700"
+                        >
+                          Apply Custom Range
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Date Inputs */}
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <h4 className="text-sm font-medium text-gray-700 mb-3">Quick Date Inputs</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Created From
+                    </label>
+                    <input
+                      type="date"
+                      value={dateFilters.createdFrom}
+                      onChange={(e) => handleDateFilterChange('createdFrom', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Created To
+                    </label>
+                    <input
+                      type="date"
+                      value={dateFilters.createdTo}
+                      onChange={(e) => handleDateFilterChange('createdTo', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Updated From
+                    </label>
+                    <input
+                      type="date"
+                      value={dateFilters.updatedFrom}
+                      onChange={(e) => handleDateFilterChange('updatedFrom', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Updated To
+                    </label>
+                    <input
+                      type="date"
+                      value={dateFilters.updatedTo}
+                      onChange={(e) => handleDateFilterChange('updatedTo', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end space-x-3 mt-4">
+                <button
+                  onClick={applyDateFilters}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center space-x-2"
+                >
+                  <Filter className="h-4 w-4" />
+                  <span>Apply Filters</span>
+                </button>
+                <button
+                  onClick={clearDateFilters}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors flex items-center space-x-2"
+                >
+                  <X className="h-4 w-4" />
+                  <span>Clear Filters</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -811,12 +1248,6 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
                         Product
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Main Category
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Sub Category
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Description
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -862,7 +1293,7 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
                         Created Date
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Product Updated Date
+                        Updated Date
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Actions
@@ -901,16 +1332,6 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
                                 {product.title}
                               </div>
                             </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
-                            {getCategoryLevels(product).mainCategory || '-'}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
-                            {getCategoryLevels(product).subCategory || '-'}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -1034,7 +1455,7 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
                             })}`}
                             className="cursor-help hover:text-indigo-600 transition-colors border-b border-dotted border-gray-300 hover:border-indigo-400"
                           >
-                            {formatDate(product.createdAt)}
+                            {formatDateString(product.createdAt)}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -1285,6 +1706,8 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
           </div>
         </div>
       )}
+
+
 
     </div>
   );

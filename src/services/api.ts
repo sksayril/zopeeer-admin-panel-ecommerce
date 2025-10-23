@@ -651,15 +651,17 @@ export interface ScrapeLog {
   type: 'product' | 'category';
   url: string;
   category?: string;
-  status: 'pending' | 'success' | 'failed' | 'completed';
+  status: 'pending' | 'success' | 'failed' | 'completed' | 'in_progress';
   action?: 'Manual' | 'Retry' | string;
   operationId?: string;
   createdAt?: string;
   updatedAt?: string;
+  // Enhanced Product Statistics
   totalProducts?: number;
   scrapedProducts?: number;
   failedProducts?: number;
-  duration?: number;
+  productSuccessRate?: number;
+  duration?: number; // milliseconds
   progress?: {
     current: number;
     total: number;
@@ -667,6 +669,14 @@ export interface ScrapeLog {
   };
   errorMessage?: string;
   retryCount?: number;
+  // Product Statistics Summary
+  productStats?: {
+    total: number;
+    successful: number;
+    failed: number;
+    successRate: number;
+    remaining: number;
+  };
 }
 
 export interface CreateScrapeLogRequest {
@@ -697,24 +707,54 @@ export interface CreateScrapeLogResponse {
 }
 
 export interface UpdateScrapeLogRequest {
-  status?: 'pending' | 'success' | 'failed' | 'completed';
+  when?: string; // ISO date
+  platform?: string;
+  type?: 'product' | 'category';
+  url?: string;
+  category?: string;
+  status?: 'pending' | 'success' | 'failed' | 'completed' | 'in_progress';
   action?: 'Manual' | 'Retry' | string;
+  operationId?: string;
+  // Enhanced Product Statistics
   totalProducts?: number;
   scrapedProducts?: number;
   failedProducts?: number;
-  duration?: number;
   progress?: {
     current: number;
     total: number;
     percentage: number;
   };
+  duration?: number; // milliseconds
   errorMessage?: string;
   retryCount?: number;
 }
 
 export interface UpdateScrapeLogResponse {
   success: boolean;
-  data: ScrapeLog;
+  message: string;
+  data: ScrapeLog & {
+    // Enhanced Product Statistics
+    totalProducts?: number;
+    scrapedProducts?: number;
+    failedProducts?: number;
+    productSuccessRate?: number;
+    duration?: number;
+    progress?: {
+      current: number;
+      total: number;
+      percentage: number;
+    };
+    errorMessage?: string | null;
+    retryCount?: number;
+    // Product Statistics Summary
+    productStats?: {
+      total: number;
+      successful: number;
+      failed: number;
+      successRate: number;
+      remaining: number;
+    };
+  };
 }
 
 export interface CategoryStats {
@@ -956,12 +996,24 @@ export const adminApi = {
   },
 
   // Get all products
-  getProducts: async (params?: { page?: number; limit?: number; search?: string }): Promise<GetProductsResponse> => {
+  getProducts: async (params?: { 
+    page?: number; 
+    limit?: number; 
+    search?: string;
+    createdFrom?: string;
+    createdTo?: string;
+    updatedFrom?: string;
+    updatedTo?: string;
+  }): Promise<GetProductsResponse> => {
     try {
       const queryParams = new URLSearchParams();
       if (params?.page) queryParams.append('page', params.page.toString());
       if (params?.limit) queryParams.append('limit', params.limit.toString());
       if (params?.search) queryParams.append('search', params.search);
+      if (params?.createdFrom) queryParams.append('createdFrom', params.createdFrom);
+      if (params?.createdTo) queryParams.append('createdTo', params.createdTo);
+      if (params?.updatedFrom) queryParams.append('updatedFrom', params.updatedFrom);
+      if (params?.updatedTo) queryParams.append('updatedTo', params.updatedTo);
       
       const response: AxiosResponse<GetProductsResponse> = await api.get(`/admin/products?${queryParams.toString()}`);
       return response.data;
@@ -1005,6 +1057,7 @@ export const adminApi = {
       );
     }
   },
+
 };
 
 // External scraping API base URL
@@ -1078,11 +1131,41 @@ export const scrapingApi = {
     }
   },
 
+  // Utility function to remove "Add to Compare" text from scraped data
+  removeAddToCompareText: (data: ScrapedCategoryData): ScrapedCategoryData => {
+    // Comprehensive regex pattern to match various forms of "Add to Compare" text
+    const addToCompareRegex = /Add\s+to\s+Compare/gi;
+    
+    const cleanProducts = data.products.map(product => ({
+      ...product,
+      productName: product.productName.replace(addToCompareRegex, '').trim(),
+      brand: product.brand.replace(addToCompareRegex, '').trim(),
+      sellingPrice: product.sellingPrice.replace(addToCompareRegex, '').trim(),
+      actualPrice: product.actualPrice.replace(addToCompareRegex, '').trim(),
+      discount: product.discount.replace(addToCompareRegex, '').trim(),
+      rating: product.rating.replace(addToCompareRegex, '').trim(),
+      reviewCount: product.reviewCount.replace(addToCompareRegex, '').trim(),
+      availability: product.availability.replace(addToCompareRegex, '').trim()
+    }));
+
+    return {
+      ...data,
+      products: cleanProducts
+    };
+  },
+
   // Scrape category from Flipkart
   scrapeFlipkartCategory: async (url: string, page: number = 1): Promise<ScrapeCategoryResponse> => {
     try {
       const response: AxiosResponse<ScrapeCategoryResponse> = await scrapingApiClient.post('/flipkart/scrape-category', { url, page });
-      return response.data;
+      
+      // Remove "Add to Compare" text from the response data
+      const cleanedData = scrapingApi.removeAddToCompareText(response.data.data);
+      
+      return {
+        ...response.data,
+        data: cleanedData
+      };
     } catch (error: any) {
       throw new Error(
         error.response?.data?.message || 
@@ -1096,7 +1179,14 @@ export const scrapingApi = {
   scrapeAmazonCategory: async (url: string, page: number = 1): Promise<ScrapeCategoryResponse> => {
     try {
       const response: AxiosResponse<ScrapeCategoryResponse> = await scrapingApiClient.post('/amazon/scrape-category', { url, page });
-      return response.data;
+      
+      // Remove "Add to Compare" text from the response data
+      const cleanedData = scrapingApi.removeAddToCompareText(response.data.data);
+      
+      return {
+        ...response.data,
+        data: cleanedData
+      };
     } catch (error: any) {
       throw new Error(
         error.response?.data?.message || 
@@ -1110,7 +1200,14 @@ export const scrapingApi = {
   scrapeMyntraCategory: async (url: string, page: number = 1): Promise<ScrapeCategoryResponse> => {
     try {
       const response: AxiosResponse<ScrapeCategoryResponse> = await scrapingApiClient.post('/myntra/scrape-category', { url, page });
-      return response.data;
+      
+      // Remove "Add to Compare" text from the response data
+      const cleanedData = scrapingApi.removeAddToCompareText(response.data.data);
+      
+      return {
+        ...response.data,
+        data: cleanedData
+      };
     } catch (error: any) {
       throw new Error(
         error.response?.data?.message || 
@@ -1124,7 +1221,14 @@ export const scrapingApi = {
   scrapeCategory: async (platform: string, url: string, page: number = 1): Promise<ScrapeCategoryResponse> => {
     try {
       const response: AxiosResponse<ScrapeCategoryResponse> = await scrapingApiClient.post(`/${platform}/scrape-category`, { url, page });
-      return response.data;
+      
+      // Remove "Add to Compare" text from the response data
+      const cleanedData = scrapingApi.removeAddToCompareText(response.data.data);
+      
+      return {
+        ...response.data,
+        data: cleanedData
+      };
     } catch (error: any) {
       throw new Error(
         error.response?.data?.message || 
@@ -1434,14 +1538,15 @@ export const scrapingApi = {
 
   updateScrapeLog: async (id: string, payload: UpdateScrapeLogRequest): Promise<UpdateScrapeLogResponse> => {
     try {
-      console.log(`Attempting to update scrape log ${id} with payload:`, payload);
+      console.log(`Updating scrape log ${id} with enhanced payload:`, payload);
       console.log(`Full URL: ${SCRAPING_API_BASE_URL}/scrape-logs/${id}`);
       
-      // Try PATCH first (as per your curl example)
-      const response: AxiosResponse<UpdateScrapeLogResponse> = await scrapingApiClient.patch(`/scrape-logs/${id}`, payload);
+      // Use PUT method for enhanced product statistics support
+      const response: AxiosResponse<UpdateScrapeLogResponse> = await scrapingApiClient.put(`/scrape-logs/${id}`, payload);
+      console.log('Enhanced PUT update successful:', response.data);
       return response.data;
     } catch (error: any) {
-      console.error('PATCH request failed:', error);
+      console.error('Enhanced PUT request failed:', error);
       console.error('Error details:', {
         status: error.response?.status,
         statusText: error.response?.statusText,
@@ -1450,18 +1555,16 @@ export const scrapingApi = {
         method: error.config?.method
       });
       
-      // If PATCH fails, try PUT as fallback
-      if (error.response?.status === 405 || error.message?.includes('Cannot PATCH')) {
-        try {
-          console.log('PATCH failed, trying PUT method...');
-          const response: AxiosResponse<UpdateScrapeLogResponse> = await scrapingApiClient.put(`/scrape-logs/${id}`, payload);
-          return response.data;
-        } catch (putError: any) {
-          console.error('PUT request also failed:', putError);
-          throw new Error(putError.response?.data?.message || putError.message || 'Failed to update scrape log with PUT method.');
-        }
+      // Fallback to PATCH for backward compatibility
+      try {
+        console.log('PUT failed, trying PATCH method for backward compatibility...');
+        const response: AxiosResponse<UpdateScrapeLogResponse> = await scrapingApiClient.patch(`/scrape-logs/${id}`, payload);
+        console.log('PATCH fallback successful:', response.data);
+        return response.data;
+      } catch (patchError: any) {
+        console.error('PATCH fallback also failed:', patchError);
+        throw new Error(patchError.response?.data?.message || patchError.message || 'Failed to update scrape log with both PUT and PATCH methods.');
       }
-      throw new Error(error.response?.data?.message || error.message || 'Failed to update scrape log.');
     }
   },
 
@@ -1544,6 +1647,190 @@ export const scrapingApi = {
       }
     }
     throw new Error('All endpoint variations failed');
+  },
+
+  // Enhanced PUT endpoint for updating scrape logs with product statistics
+  updateScrapeLogEnhanced: async (id: string, payload: UpdateScrapeLogRequest): Promise<UpdateScrapeLogResponse> => {
+    try {
+      console.log(`Updating scrape log ${id} with enhanced payload:`, payload);
+      console.log(`Full URL: ${SCRAPING_API_BASE_URL}/scrape-logs/${id}`);
+      
+      const response: AxiosResponse<UpdateScrapeLogResponse> = await scrapingApiClient.put(`/scrape-logs/${id}`, payload);
+      console.log('Enhanced update successful:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('Enhanced PUT request failed:', error);
+      console.error('Error details:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        url: error.config?.url,
+        method: error.config?.method
+      });
+      
+      throw new Error(error.response?.data?.message || error.message || 'Failed to update scrape log with enhanced statistics.');
+    }
+  },
+
+  // Helper function to create enhanced update payload with product statistics
+  createEnhancedUpdatePayload: (options: {
+    when?: string;
+    platform?: string;
+    type?: 'product' | 'category';
+    url?: string;
+    category?: string;
+    status?: 'pending' | 'success' | 'failed' | 'completed' | 'in_progress';
+    action?: string;
+    operationId?: string;
+    totalProducts?: number;
+    scrapedProducts?: number;
+    failedProducts?: number;
+    duration?: number;
+    errorMessage?: string;
+    retryCount?: number;
+  }): UpdateScrapeLogRequest => {
+    const payload: UpdateScrapeLogRequest = {};
+    
+    // Basic fields
+    if (options.when) payload.when = options.when;
+    if (options.platform) payload.platform = options.platform;
+    if (options.type) payload.type = options.type;
+    if (options.url) payload.url = options.url;
+    if (options.category) payload.category = options.category;
+    if (options.status) payload.status = options.status;
+    if (options.action) payload.action = options.action;
+    if (options.operationId) payload.operationId = options.operationId;
+    
+    // Enhanced product statistics - handle zero values properly
+    if (options.totalProducts !== undefined) payload.totalProducts = options.totalProducts;
+    if (options.scrapedProducts !== undefined) payload.scrapedProducts = options.scrapedProducts;
+    if (options.failedProducts !== undefined) payload.failedProducts = options.failedProducts;
+    if (options.duration !== undefined) payload.duration = options.duration;
+    if (options.errorMessage) payload.errorMessage = options.errorMessage;
+    if (options.retryCount !== undefined) payload.retryCount = options.retryCount;
+    
+    // Calculate progress if we have the required data
+    if (options.totalProducts !== undefined && options.scrapedProducts !== undefined) {
+      payload.progress = {
+        current: options.scrapedProducts,
+        total: options.totalProducts,
+        percentage: options.totalProducts > 0 ? Math.round((options.scrapedProducts / options.totalProducts) * 100) : 0
+      };
+    }
+    
+    return payload;
+  },
+
+  // Helper function for single product scraping
+  updateSingleProductScrape: async (logId: string, productData: {
+    platform: string;
+    url: string;
+    category?: string;
+    status: 'success' | 'failed';
+    action?: string;
+    errorMessage?: string;
+  }): Promise<UpdateScrapeLogResponse> => {
+    const payload = scrapingApi.createEnhancedUpdatePayload({
+      when: new Date().toISOString(),
+      platform: productData.platform,
+      type: 'product',
+      url: productData.url,
+      category: productData.category,
+      status: productData.status,
+      action: productData.action || 'scrape_single_product',
+      totalProducts: 1,
+      scrapedProducts: productData.status === 'success' ? 1 : 0,
+      failedProducts: productData.status === 'failed' ? 1 : 0,
+      duration: 0, // Single product scraping duration
+      errorMessage: productData.errorMessage,
+      retryCount: 0
+    });
+
+    return await scrapingApi.updateScrapeLog(logId, payload);
+  },
+
+  // Helper function for category-based product scraping
+  updateCategoryScrapingProgress: async (logId: string, progressData: {
+    platform: string;
+    category: string;
+    totalProducts: number;
+    scrapedProducts: number;
+    failedProducts: number;
+    status: 'in_progress' | 'completed' | 'failed';
+    action?: string;
+    errorMessage?: string;
+    duration?: number;
+  }): Promise<UpdateScrapeLogResponse> => {
+    const payload = scrapingApi.createEnhancedUpdatePayload({
+      when: new Date().toISOString(),
+      platform: progressData.platform,
+      type: 'category',
+      category: progressData.category,
+      status: progressData.status,
+      action: progressData.action || 'scrape_category_products',
+      totalProducts: progressData.totalProducts,
+      scrapedProducts: progressData.scrapedProducts,
+      failedProducts: progressData.failedProducts,
+      duration: progressData.duration || 0,
+      errorMessage: progressData.errorMessage,
+      retryCount: 0
+    });
+
+    return await scrapingApi.updateScrapeLog(logId, payload);
+  },
+
+  // Helper function to start category scraping
+  startCategoryScraping: async (logId: string, categoryData: {
+    platform: string;
+    category: string;
+    totalProducts: number;
+    operationId?: string;
+  }): Promise<UpdateScrapeLogResponse> => {
+    const payload = scrapingApi.createEnhancedUpdatePayload({
+      when: new Date().toISOString(),
+      platform: categoryData.platform,
+      type: 'category',
+      category: categoryData.category,
+      status: 'in_progress',
+      action: 'start_category_scraping',
+      operationId: categoryData.operationId,
+      totalProducts: categoryData.totalProducts,
+      scrapedProducts: 0,
+      failedProducts: 0,
+      duration: 0,
+      retryCount: 0
+    });
+
+    return await scrapingApi.updateScrapeLog(logId, payload);
+  },
+
+  // Helper function to update individual product progress within category
+  updateProductProgressInCategory: async (logId: string, progressData: {
+    platform: string;
+    category: string;
+    totalProducts: number;
+    scrapedProducts: number;
+    failedProducts: number;
+    currentProductUrl?: string;
+    duration?: number;
+  }): Promise<UpdateScrapeLogResponse> => {
+    const isCompleted = progressData.scrapedProducts + progressData.failedProducts >= progressData.totalProducts;
+    
+    const payload = scrapingApi.createEnhancedUpdatePayload({
+      when: new Date().toISOString(),
+      platform: progressData.platform,
+      type: 'category',
+      category: progressData.category,
+      status: isCompleted ? 'completed' : 'in_progress',
+      action: 'scrape_category_products',
+      totalProducts: progressData.totalProducts,
+      scrapedProducts: progressData.scrapedProducts,
+      failedProducts: progressData.failedProducts,
+      duration: progressData.duration || 0,
+      retryCount: 0
+    });
+
+    return await scrapingApi.updateScrapeLog(logId, payload);
   },
 };
 

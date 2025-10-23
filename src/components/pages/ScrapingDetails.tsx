@@ -13,9 +13,13 @@ import {
   BarChart3,
   Target,
   Timer,
-  RotateCcw
+  RotateCcw,
+  History,
+  Tag
 } from 'lucide-react';
-import { scrapingApi, ScrapeLog, CategoryStats, PlatformStats, UpdateScrapeLogRequest } from '../../services/api';
+import { scrapingApi } from '../../services/api';
+import { scrapingHistoryService, ScrapingSession, ScrapingStatistics } from '../../services/scrapingHistory';
+import ScrapingHistory from '../ScrapingHistory';
 import toast from 'react-hot-toast';
 
 // Types for recent scraping data
@@ -36,9 +40,7 @@ interface RecentScrapeItem {
 
 const ScrapingDetails: React.FC = () => {
   const [recentScrapes, setRecentScrapes] = useState<RecentScrapeItem[]>([]);
-  const [logs, setLogs] = useState<ScrapeLog[]>([]);
   const [loading, setLoading] = useState(true);
-  const [logsLoading, setLogsLoading] = useState(false);
   const [filters, setFilters] = useState({
     platform: '',
     type: '',
@@ -46,27 +48,22 @@ const ScrapingDetails: React.FC = () => {
     search: '',
     startDate: '',
     endDate: '',
-    category: '',
-    page: 1,
-    limit: 20
-  });
-  const [pagination, setPagination] = useState({
-    currentPage: 1,
-    totalPages: 1,
-    totalItems: 0,
-    itemsPerPage: 20
-  });
-  const [statistics, setStatistics] = useState<{
-    categoryStats: CategoryStats[];
-    platformStats: PlatformStats[];
-  }>({
-    categoryStats: [],
-    platformStats: []
+    category: ''
   });
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [editingLog, setEditingLog] = useState<ScrapeLog | null>(null);
-  const [updateLoading, setUpdateLoading] = useState(false);
-  const [selectedLogs, setSelectedLogs] = useState<string[]>([]);
+  const [showHistory, setShowHistory] = useState<boolean>(false);
+  const [historyStatistics, setHistoryStatistics] = useState<ScrapingStatistics>({
+    totalSessions: 0,
+    completedSessions: 0,
+    failedSessions: 0,
+    totalProducts: 0,
+    successfulProducts: 0,
+    failedProducts: 0,
+    averageSuccessRate: 0,
+    totalDuration: 0,
+    platformStats: {},
+    categoryStats: {}
+  });
 
   // Load recent scrapes from localStorage
   const loadRecentScrapes = () => {
@@ -81,126 +78,59 @@ const ScrapingDetails: React.FC = () => {
     }
   };
 
-  // Load scrape logs from API
-  const loadScrapeLogs = async () => {
+  // Load history statistics
+  const loadHistoryStatistics = () => {
     try {
-      setLogsLoading(true);
-      const apiFilters = {
-        page: filters.page,
-        limit: filters.limit,
-        platform: filters.platform || undefined,
-        type: (filters.type as 'product' | 'category') || undefined,
-        status: (filters.status as 'pending' | 'success' | 'failed') || undefined,
-        startDate: filters.startDate || undefined,
-        endDate: filters.endDate || undefined,
-        search: filters.search || undefined,
-        category: filters.category || undefined
-      };
-      const response = await scrapingApi.getScrapeLogs(apiFilters);
-      setLogs(response.data);
-      setPagination(response.pagination);
-      if (response.statistics) {
-        setStatistics(response.statistics);
-      }
-    } catch (error: any) {
-      toast.error('Failed to load scrape logs');
-    } finally {
-      setLogsLoading(false);
+      const stats = scrapingHistoryService.getStatistics();
+      setHistoryStatistics(stats);
+    } catch (error) {
+      console.error('Failed to load history statistics:', error);
     }
   };
 
-  // Clear all recent scrapes
-  const clearRecentScrapes = () => {
-    localStorage.removeItem('recentScrapes');
-    setRecentScrapes([]);
-    toast.success('Recent scrapes cleared');
+  // Load localStorage scraping sessions
+  const loadScrapingSessions = () => {
+    try {
+      const sessions = scrapingHistoryService.getHistory();
+      // Convert sessions to recent scrapes format for display
+      const convertedSessions = sessions.map(session => ({
+        id: session.id,
+        when: session.when,
+        platform: session.platform,
+        type: session.type,
+        url: session.url,
+        category: session.category,
+        status: session.status,
+        error: session.errorMessage,
+        scrapedData: session.scrapedData
+      }));
+      setRecentScrapes(convertedSessions);
+    } catch (error) {
+      console.error('Failed to load scraping sessions:', error);
+    }
+  };
+
+  // Clear all scraping sessions
+  const clearAllSessions = () => {
+    if (window.confirm('Are you sure you want to clear all scraping sessions?')) {
+      scrapingHistoryService.clearAllHistory();
+      loadScrapingSessions();
+      loadHistoryStatistics();
+      toast.success('All scraping sessions cleared');
+    }
   };
 
   // Retry a scrape
-  const retryScrape = (_scrape: RecentScrapeItem) => {
+  const retryScrape = (scrape: RecentScrapeItem) => {
     // This would trigger a new scrape - for now just show a message
     toast('Retry functionality would be implemented here', { icon: 'ℹ️' });
-  };
-
-  // Update a scrape log
-  const updateScrapeLog = async (logId: string, updateData: UpdateScrapeLogRequest) => {
-    try {
-      setUpdateLoading(true);
-      try {
-        await scrapingApi.updateScrapeLog(logId, updateData);
-        toast.success('Scrape log updated successfully');
-      } catch (error: any) {
-        console.log('Primary update method failed, trying alternative...');
-        await scrapingApi.updateScrapeLogAlternative(logId, updateData);
-        toast.success('Scrape log updated successfully (using alternative method)');
-      }
-      loadScrapeLogs(); // Refresh the logs
-      setEditingLog(null);
-    } catch (error: any) {
-      console.error('Update failed:', error);
-      toast.error(error.message || 'Failed to update scrape log');
-    } finally {
-      setUpdateLoading(false);
-    }
-  };
-
-  // Bulk update scrape logs
-  const bulkUpdateScrapeLogs = async (updateData: UpdateScrapeLogRequest) => {
-    if (selectedLogs.length === 0) {
-      toast.error('Please select logs to update');
-      return;
-    }
-
-    try {
-      setUpdateLoading(true);
-      const updates = selectedLogs.map(id => ({ id, data: updateData }));
-      await scrapingApi.bulkUpdateScrapeLogs(updates);
-      toast.success(`Updated ${selectedLogs.length} scrape logs successfully`);
-      setSelectedLogs([]);
-      loadScrapeLogs(); // Refresh the logs
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to bulk update scrape logs');
-    } finally {
-      setUpdateLoading(false);
-    }
-  };
-
-  // Toggle log selection
-  const toggleLogSelection = (logId: string) => {
-    setSelectedLogs(prev => 
-      prev.includes(logId) 
-        ? prev.filter(id => id !== logId)
-        : [...prev, logId]
-    );
-  };
-
-  // Select all logs
-  const selectAllLogs = () => {
-    setSelectedLogs(logs.map(log => log._id));
-  };
-
-  // Clear selection
-  const clearSelection = () => {
-    setSelectedLogs([]);
-  };
-
-  // Test API connection
-  const testApiConnection = async () => {
-    try {
-      console.log('Testing API connection...');
-      const response = await scrapingApi.getScrapeLogs({ page: 1, limit: 1 });
-      console.log('API connection successful:', response);
-      toast.success('API connection successful');
-    } catch (error: any) {
-      console.error('API connection failed:', error);
-      toast.error(`API connection failed: ${error.message}`);
-    }
   };
 
   // Initial load
   useEffect(() => {
     loadRecentScrapes();
-    loadScrapeLogs();
+    loadScrapingSessions();
+    loadHistoryStatistics();
     setLoading(false);
   }, [filters]);
 
@@ -210,25 +140,13 @@ const ScrapingDetails: React.FC = () => {
 
     const interval = setInterval(() => {
       loadRecentScrapes();
-      loadScrapeLogs();
+      loadScrapingSessions();
+      loadHistoryStatistics();
     }, 5000);
 
     return () => clearInterval(interval);
   }, [autoRefresh, filters]);
 
-  // Handle filter changes
-  const handleFilterChange = (key: string, value: string) => {
-    setFilters(prev => ({
-      ...prev,
-      [key]: value,
-      page: 1
-    }));
-  };
-
-  // Handle pagination
-  const handlePageChange = (page: number) => {
-    setFilters(prev => ({ ...prev, page }));
-  };
 
   // Get status color
   const getStatusColor = (status: string) => {
@@ -289,11 +207,6 @@ const ScrapingDetails: React.FC = () => {
     return 'text-red-600';
   };
 
-  // Format success rate
-  const formatSuccessRate = (successful: number, total: number) => {
-    if (total === 0) return '0%';
-    return `${((successful / total) * 100).toFixed(1)}%`;
-  };
 
   if (loading) {
     return (
@@ -314,10 +227,11 @@ const ScrapingDetails: React.FC = () => {
         </div>
         <div className="flex items-center space-x-3">
           <button
-            onClick={testApiConnection}
-            className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 flex items-center space-x-2"
+            onClick={() => setShowHistory(true)}
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center space-x-2"
           >
-            <span>Test API</span>
+            <History className="h-4 w-4" />
+            <span>View History</span>
           </button>
           <button
             onClick={() => setAutoRefresh(!autoRefresh)}
@@ -333,7 +247,8 @@ const ScrapingDetails: React.FC = () => {
           <button
             onClick={() => {
               loadRecentScrapes();
-              loadScrapeLogs();
+              loadScrapingSessions();
+              loadHistoryStatistics();
             }}
             className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center space-x-2"
           >
@@ -343,123 +258,92 @@ const ScrapingDetails: React.FC = () => {
         </div>
       </div>
 
-      {/* Statistics Section */}
-      {(statistics.categoryStats.length > 0 || statistics.platformStats.length > 0) && (
+      {/* History Statistics Section */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-semibold text-gray-900 flex items-center">
-              <BarChart3 className="h-5 w-5 mr-2" />
-              Scraping Statistics
+            <History className="h-5 w-5 mr-2" />
+            Scraping History Overview
             </h2>
+          <button
+            onClick={() => setShowHistory(true)}
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center space-x-2"
+          >
+            <History className="h-4 w-4" />
+            <span>View Full History</span>
+          </button>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Category Statistics */}
-            {statistics.categoryStats.length > 0 && (
-              <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
-                  <Target className="h-4 w-4 mr-2" />
-                  Category Performance
-                </h3>
-                <div className="space-y-3">
-                  {statistics.categoryStats.map((stat, index) => (
-                    <div key={index} className="bg-gray-50 rounded-lg p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="font-medium text-gray-900">{stat.category}</span>
-                        <span className={`text-sm font-medium ${getSuccessRateColor(stat.averageSuccessRate)}`}>
-                          {stat.averageSuccessRate.toFixed(1)}% success rate
-                        </span>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <div className="flex items-center space-x-2">
+              <BarChart3 className="h-5 w-5 text-indigo-600" />
+              <span className="text-sm font-medium text-gray-600">Total Sessions</span>
                       </div>
-                      <div className="grid grid-cols-3 gap-2 text-sm text-gray-600">
-                        <div>
-                          <span className="font-medium">{stat.totalSessions}</span> sessions
+            <p className="text-2xl font-bold text-gray-900 mt-1">{historyStatistics.totalSessions}</p>
                         </div>
-                        <div>
-                          <span className="font-medium text-green-600">{stat.successfulProducts}</span> successful
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <div className="flex items-center space-x-2">
+              <CheckCircle className="h-5 w-5 text-green-600" />
+              <span className="text-sm font-medium text-gray-600">Completed</span>
                         </div>
-                        <div>
-                          <span className="font-medium text-red-600">{stat.failedProducts}</span> failed
+            <p className="text-2xl font-bold text-gray-900 mt-1">{historyStatistics.completedSessions}</p>
                         </div>
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <div className="flex items-center space-x-2">
+              <XCircle className="h-5 w-5 text-red-600" />
+              <span className="text-sm font-medium text-gray-600">Failed</span>
                       </div>
-                      <div className="mt-2">
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div 
-                            className="bg-green-500 h-2 rounded-full transition-all duration-300"
-                            style={{ width: `${stat.averageSuccessRate}%` }}
-                          ></div>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{historyStatistics.failedSessions}</p>
                         </div>
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <div className="flex items-center space-x-2">
+              <Tag className="h-5 w-5 text-blue-600" />
+              <span className="text-sm font-medium text-gray-600">Success Rate</span>
                       </div>
+            <p className="text-2xl font-bold text-gray-900 mt-1">
+              {Math.round(historyStatistics.averageSuccessRate)}%
+            </p>
                     </div>
-                  ))}
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <div className="flex items-center space-x-2">
+              <Activity className="h-5 w-5 text-purple-600" />
+              <span className="text-sm font-medium text-gray-600">Total Products</span>
                 </div>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{historyStatistics.totalProducts}</p>
               </div>
-            )}
-
-            {/* Platform Statistics */}
-            {statistics.platformStats.length > 0 && (
-              <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
-                  <TrendingUp className="h-4 w-4 mr-2" />
-                  Platform Performance
-                </h3>
-                <div className="space-y-3">
-                  {statistics.platformStats.map((stat, index) => (
-                    <div key={index} className="bg-gray-50 rounded-lg p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getPlatformColor(stat.platform)}`}>
-                          {stat.platform.charAt(0).toUpperCase() + stat.platform.slice(1)}
-                        </span>
-                        <span className={`text-sm font-medium ${getSuccessRateColor((stat.successfulProducts / stat.totalProducts) * 100)}`}>
-                          {formatSuccessRate(stat.successfulProducts, stat.totalProducts)}
-                        </span>
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <div className="flex items-center space-x-2">
+              <TrendingUp className="h-5 w-5 text-orange-600" />
+              <span className="text-sm font-medium text-gray-600">Duration</span>
                       </div>
-                      <div className="grid grid-cols-3 gap-2 text-sm text-gray-600">
-                        <div>
-                          <span className="font-medium">{stat.totalSessions}</span> sessions
-                        </div>
-                        <div>
-                          <span className="font-medium text-green-600">{stat.successfulProducts}</span> successful
-                        </div>
-                        <div>
-                          <span className="font-medium text-red-600">{stat.failedProducts}</span> failed
-                        </div>
-                      </div>
-                      <div className="mt-2">
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div 
-                            className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                            style={{ width: `${(stat.successfulProducts / stat.totalProducts) * 100}%` }}
-                          ></div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <p className="text-lg font-bold text-gray-900 mt-1">
+              {formatDuration(historyStatistics.totalDuration)}
+            </p>
           </div>
         </div>
-      )}
+      </div>
+
 
       {/* Recent Scrapes Section */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-semibold text-gray-900">Recent Scrapes</h2>
+          <h2 className="text-xl font-semibold text-gray-900">Scraping Sessions</h2>
           <button
-            onClick={clearRecentScrapes}
+            onClick={clearAllSessions}
             className="text-red-600 hover:text-red-700 text-sm font-medium flex items-center space-x-1"
           >
             <Trash2 className="h-4 w-4" />
-            <span>Clear All</span>
+            <span>Clear All Sessions</span>
           </button>
         </div>
 
         {recentScrapes.length === 0 ? (
           <div className="text-center py-12">
             <Activity className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-2 text-sm font-medium text-gray-900">No recent scrapes</h3>
+            <h3 className="mt-2 text-sm font-medium text-gray-900">No scraping sessions</h3>
             <p className="mt-1 text-sm text-gray-500">
-              Recent scraping activities will appear here.
+              Scraping sessions will appear here when available.
             </p>
           </div>
         ) : (
@@ -542,430 +426,12 @@ const ScrapingDetails: React.FC = () => {
         )}
       </div>
 
-      {/* Scrape Logs Section */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-semibold text-gray-900">Scrape Logs</h2>
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={loadScrapeLogs}
-              disabled={logsLoading}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center space-x-2 disabled:opacity-50"
-            >
-              {logsLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-              <span>Refresh Logs</span>
-            </button>
-          </div>
-        </div>
 
-        {/* Filters */}
-        <div className="grid grid-cols-1 md:grid-cols-7 gap-3 mb-6">
-          <input
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            placeholder="Search"
-            value={filters.search}
-            onChange={(e) => handleFilterChange('search', e.target.value)}
-          />
-          <select
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            value={filters.platform}
-            onChange={(e) => handleFilterChange('platform', e.target.value)}
-          >
-            <option value="">All Platforms</option>
-            <option value="flipkart">Flipkart</option>
-            <option value="amazon">Amazon</option>
-            <option value="myntra">Myntra</option>
-          </select>
-          <select
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            value={filters.type}
-            onChange={(e) => handleFilterChange('type', e.target.value)}
-          >
-            <option value="">All Types</option>
-            <option value="product">Product</option>
-            <option value="category">Category</option>
-          </select>
-          <select
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            value={filters.status}
-            onChange={(e) => handleFilterChange('status', e.target.value)}
-          >
-            <option value="">All Status</option>
-            <option value="success">Success</option>
-            <option value="failed">Failed</option>
-            <option value="pending">Pending</option>
-          </select>
-          <input
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            placeholder="Category"
-            value={filters.category}
-            onChange={(e) => handleFilterChange('category', e.target.value)}
-          />
-          <input
-            type="date"
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            value={filters.startDate}
-            onChange={(e) => handleFilterChange('startDate', e.target.value)}
-          />
-          <input
-            type="date"
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            value={filters.endDate}
-            onChange={(e) => handleFilterChange('endDate', e.target.value)}
-          />
-        </div>
-
-        {/* Bulk Update Controls */}
-        {logs.length > 0 && (
-          <div className="bg-gray-50 rounded-lg p-4 mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center space-x-4">
-                <button
-                  onClick={selectAllLogs}
-                  className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
-                >
-                  Select All ({logs.length})
-                </button>
-                <button
-                  onClick={clearSelection}
-                  className="text-sm text-gray-600 hover:text-gray-700 font-medium"
-                >
-                  Clear Selection
-                </button>
-                {selectedLogs.length > 0 && (
-                  <span className="text-sm text-gray-600">
-                    {selectedLogs.length} selected
-                  </span>
-                )}
-              </div>
-              {selectedLogs.length > 0 && (
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => bulkUpdateScrapeLogs({ status: 'completed' })}
-                    disabled={updateLoading}
-                    className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    Mark as Completed
-                  </button>
-                  <button
-                    onClick={() => bulkUpdateScrapeLogs({ status: 'failed' })}
-                    disabled={updateLoading}
-                    className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 disabled:opacity-50"
-                  >
-                    Mark as Failed
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {logs.length === 0 ? (
-          <div className="text-center py-12">
-            <Activity className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-2 text-sm font-medium text-gray-900">No scrape logs found</h3>
-            <p className="mt-1 text-sm text-gray-500">
-              Scraping logs will appear here when available.
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <input
-                      type="checkbox"
-                      checked={selectedLogs.length === logs.length && logs.length > 0}
-                      onChange={(e) => e.target.checked ? selectAllLogs() : clearSelection()}
-                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                    />
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    When
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Platform
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Type
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    URL
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Category
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Progress
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Duration
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Action
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {logs.map((log) => (
-                  <tr key={log._id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <input
-                        type="checkbox"
-                        checked={selectedLogs.includes(log._id)}
-                        onChange={() => toggleLogSelection(log._id)}
-                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                      />
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {formatDate(log.when || log.createdAt || '')}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getPlatformColor(log.platform)}`}>
-                        {log.platform.charAt(0).toUpperCase() + log.platform.slice(1)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 capitalize">
-                      {log.type}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center space-x-2">
-                        <div className="text-sm text-gray-600 truncate max-w-xs" title={log.url}>
-                          {log.url.replace(/^https?:\/\//, '').substring(0, 30)}...
-                        </div>
-                        <button
-                          onClick={() => window.open(log.url, '_blank')}
-                          className="text-indigo-600 hover:text-indigo-700"
-                        >
-                          <ExternalLink className="h-3 w-3" />
-                        </button>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {log.category || '-'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {log.progress ? (
-                        <div className="flex items-center space-x-2">
-                          <div className="w-16 bg-gray-200 rounded-full h-2">
-                            <div 
-                              className="bg-indigo-500 h-2 rounded-full transition-all duration-300"
-                              style={{ width: `${log.progress.percentage}%` }}
-                            ></div>
-                          </div>
-                          <span className="text-xs text-gray-600">
-                            {log.progress.current}/{log.progress.total}
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-sm text-gray-500">-</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      <div className="flex items-center space-x-1">
-                        <Timer className="h-3 w-3 text-gray-400" />
-                        <span>{formatDuration(log.duration)}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex flex-col space-y-1">
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(log.status)}`}>
-                          {getStatusIcon(log.status)}
-                          <span className="ml-1 capitalize">{log.status}</span>
-                        </span>
-                        {log.retryCount && log.retryCount > 0 && (
-                          <span className="inline-flex items-center px-1 py-0.5 rounded text-xs text-orange-600 bg-orange-100">
-                            <RotateCcw className="h-2 w-2 mr-1" />
-                            {log.retryCount} retries
-                          </span>
-                        )}
-                        {log.errorMessage && (
-                          <div className="text-xs text-red-600 truncate max-w-xs" title={log.errorMessage}>
-                            {log.errorMessage}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => retryScrape({
-                            id: log._id,
-                            when: log.when || log.createdAt || '',
-                            platform: log.platform,
-                            type: log.type,
-                            url: log.url,
-                            category: log.category,
-                            status: log.status,
-                            error: log.errorMessage
-                          })}
-                          className="text-indigo-600 hover:text-indigo-900 flex items-center space-x-1"
-                        >
-                          <RotateCcw className="h-3 w-3" />
-                          <span>Retry</span>
-                        </button>
-                        <button
-                          onClick={() => setEditingLog(log)}
-                          className="text-blue-600 hover:text-blue-900 flex items-center space-x-1"
-                        >
-                          <span>Edit</span>
-                        </button>
-                        {log.totalProducts && (
-                          <span className="text-xs text-gray-500">
-                            {log.scrapedProducts || 0}/{log.totalProducts} products
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Pagination */}
-        {pagination.totalPages > 1 && (
-          <div className="flex items-center justify-between pt-6 border-t border-gray-200">
-            <div className="text-sm text-gray-700">
-              Showing page {pagination.currentPage} of {pagination.totalPages} ({pagination.totalItems} total logs)
-            </div>
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => handlePageChange(pagination.currentPage - 1)}
-                disabled={pagination.currentPage === 1}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Previous
-              </button>
-              <button
-                onClick={() => handlePageChange(pagination.currentPage + 1)}
-                disabled={pagination.currentPage === pagination.totalPages}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Edit Modal */}
-      {editingLog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Update Scrape Log</h3>
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              const formData = new FormData(e.target as HTMLFormElement);
-              const updateData: UpdateScrapeLogRequest = {
-                totalProducts: parseInt(formData.get('totalProducts') as string) || undefined,
-                scrapedProducts: parseInt(formData.get('scrapedProducts') as string) || undefined,
-                failedProducts: parseInt(formData.get('failedProducts') as string) || undefined,
-                status: formData.get('status') as any || undefined,
-                duration: parseInt(formData.get('duration') as string) || undefined,
-                errorMessage: formData.get('errorMessage') as string || undefined,
-                retryCount: parseInt(formData.get('retryCount') as string) || undefined,
-              };
-              updateScrapeLog(editingLog._id, updateData);
-            }}>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                  <select
-                    name="status"
-                    defaultValue={editingLog.status}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  >
-                    <option value="pending">Pending</option>
-                    <option value="success">Success</option>
-                    <option value="completed">Completed</option>
-                    <option value="failed">Failed</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Total Products</label>
-                  <input
-                    type="number"
-                    name="totalProducts"
-                    defaultValue={editingLog.totalProducts || ''}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Scraped Products</label>
-                  <input
-                    type="number"
-                    name="scrapedProducts"
-                    defaultValue={editingLog.scrapedProducts || ''}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Failed Products</label>
-                  <input
-                    type="number"
-                    name="failedProducts"
-                    defaultValue={editingLog.failedProducts || ''}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Duration (ms)</label>
-                  <input
-                    type="number"
-                    name="duration"
-                    defaultValue={editingLog.duration || ''}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Retry Count</label>
-                  <input
-                    type="number"
-                    name="retryCount"
-                    defaultValue={editingLog.retryCount || ''}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Error Message</label>
-                  <textarea
-                    name="errorMessage"
-                    defaultValue={editingLog.errorMessage || ''}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-              <div className="flex items-center justify-end space-x-3 mt-6">
-                <button
-                  type="button"
-                  onClick={() => setEditingLog(null)}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={updateLoading}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-                >
-                  {updateLoading ? 'Updating...' : 'Update'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Scraping History Modal */}
+      <ScrapingHistory 
+        isOpen={showHistory} 
+        onClose={() => setShowHistory(false)} 
+      />
     </div>
   );
 };

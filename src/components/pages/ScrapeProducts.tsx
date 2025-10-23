@@ -10,13 +10,425 @@ import {
   Copy,
   Eye,
   X,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Clock,
+  Plus,
+  Trash2,
+  Play,
+  Pause
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { scrapingApi, ScrapedProduct, ScrapedCategoryData, adminApi, CreateScrapeLogResponse } from '../../services/api';
+import { scrapingHistoryService } from '../../services/scrapingHistory';
 import * as XLSX from 'xlsx';
 
 // Using types from API service
+
+// Scheduler Content Component
+interface SchedulerContentProps {
+  scheduledTasks: any[];
+  onAddTask: (task: any) => void;
+  onRemoveTask: (taskId: string) => void;
+  platforms: any[];
+}
+
+const SchedulerContent: React.FC<SchedulerContentProps> = ({
+  scheduledTasks,
+  onAddTask,
+  onRemoveTask,
+  platforms
+}) => {
+  const [schedulerReports, setSchedulerReports] = useState<any[]>([]);
+  const [showReports, setShowReports] = useState<boolean>(false);
+
+  const loadSchedulerReports = () => {
+    try {
+      const stored = localStorage.getItem('scheduledScrapingReports');
+      if (stored) {
+        const reports = JSON.parse(stored);
+        setSchedulerReports(reports.sort((a: any, b: any) => new Date(b.scrapedAt).getTime() - new Date(a.scrapedAt).getTime()));
+      }
+    } catch (error) {
+      console.error('Failed to load scheduler reports:', error);
+    }
+  };
+
+  const clearSchedulerReports = () => {
+    if (window.confirm('Are you sure you want to clear all scheduler reports?')) {
+      localStorage.removeItem('scheduledScrapingReports');
+      setSchedulerReports([]);
+      toast.success('Scheduler reports cleared');
+    }
+  };
+
+  useEffect(() => {
+    loadSchedulerReports();
+  }, []);
+  const [newTask, setNewTask] = useState({
+    name: '',
+    type: 'product' as 'product' | 'category',
+    platform: '',
+    url: '',
+    page: 1,
+    categoryId: '',
+    subcategoryId: '',
+    subSubcategoryId: ''
+  });
+
+  const [availableSubcategories, setAvailableSubcategories] = useState<any[]>([]);
+  const [availableSubSubcategories, setAvailableSubSubcategories] = useState<any[]>([]);
+  const [schedulerCategories, setSchedulerCategories] = useState<any[]>([]);
+
+  const loadSchedulerCategories = async () => {
+    try {
+      const response = await adminApi.getCategories();
+      if (response.success && response.data.categories) {
+        setSchedulerCategories(response.data.categories);
+      }
+    } catch (error) {
+      console.error('Failed to load categories for scheduler:', error);
+      toast.error('Failed to load categories');
+    }
+  };
+
+  useEffect(() => {
+    loadSchedulerCategories();
+  }, []);
+
+  const handleAddTask = () => {
+    if (!newTask.name || !newTask.platform || !newTask.url) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    onAddTask(newTask);
+    setNewTask({
+      name: '',
+      type: 'product',
+      platform: '',
+      url: '',
+      page: 1,
+      categoryId: '',
+      subcategoryId: '',
+      subSubcategoryId: ''
+    });
+  };
+
+  const handleCategoryChange = (categoryId: string) => {
+    setNewTask(prev => ({ ...prev, categoryId, subcategoryId: '', subSubcategoryId: '' }));
+    
+    if (categoryId) {
+      // Find the selected category from the loaded categories
+      const selectedCategory = schedulerCategories.find(c => c.id === categoryId);
+      if (selectedCategory && selectedCategory.subcategory) {
+        setAvailableSubcategories(selectedCategory.subcategory);
+      } else {
+        setAvailableSubcategories([]);
+      }
+    } else {
+      setAvailableSubcategories([]);
+    }
+    setAvailableSubSubcategories([]);
+  };
+
+  const handleSubcategoryChange = (subcategoryId: string) => {
+    setNewTask(prev => ({ ...prev, subcategoryId, subSubcategoryId: '' }));
+    
+    if (subcategoryId) {
+      // Find the selected subcategory from the available subcategories
+      const selectedSubcategory = availableSubcategories.find(s => s.id === subcategoryId);
+      if (selectedSubcategory && selectedSubcategory.subcategory) {
+        setAvailableSubSubcategories(selectedSubcategory.subcategory);
+      } else {
+        setAvailableSubSubcategories([]);
+      }
+    } else {
+      setAvailableSubSubcategories([]);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Reports Section */}
+      <div className="bg-white border border-gray-200 rounded-lg p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">Scheduler Reports ({schedulerReports.length})</h3>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setShowReports(!showReports)}
+              className="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+            >
+              {showReports ? 'Hide Reports' : 'Show Reports'}
+            </button>
+            <button
+              onClick={clearSchedulerReports}
+              className="px-3 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm"
+            >
+              Clear Reports
+            </button>
+          </div>
+        </div>
+
+        {showReports && (
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {schedulerReports.length === 0 ? (
+              <div className="text-center py-8">
+                <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-500">No scheduler reports found</p>
+              </div>
+            ) : (
+              schedulerReports.map((report, index) => (
+                <div key={index} className={`border rounded-lg p-4 ${
+                  report.success ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'
+                }`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center space-x-2">
+                      <h4 className="font-medium text-gray-900">{report.taskName}</h4>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        report.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                      }`}>
+                        {report.success ? 'Success' : 'Failed'}
+                      </span>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        report.type === 'product' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
+                      }`}>
+                        {report.type}
+                      </span>
+                    </div>
+                    <span className="text-sm text-gray-500">
+                      {new Date(report.scrapedAt).toLocaleString()}
+                    </span>
+                  </div>
+                  
+                  <div className="text-sm text-gray-600 mb-2">
+                    <p><strong>Platform:</strong> {report.platform}</p>
+                    <p><strong>URL:</strong> {report.url}</p>
+                    {report.type === 'category' && <p><strong>Page:</strong> {report.page}</p>}
+                  </div>
+
+                  {report.error && (
+                    <div className="text-sm text-red-600 mb-2">
+                      <strong>Error:</strong> {report.error}
+                    </div>
+                  )}
+
+                  {report.success && report.data && (
+                    <div className="text-sm text-gray-600">
+                      {report.type === 'product' ? (
+                        <div>
+                          <p><strong>Product:</strong> {report.data.productName}</p>
+                          <p><strong>Price:</strong> {report.data.sellingPrice}</p>
+                          <p><strong>Brand:</strong> {report.data.brand}</p>
+                        </div>
+                      ) : (
+                        <div>
+                          <p><strong>Products Found:</strong> {report.data.products?.length || 0}</p>
+                          <p><strong>Total Products:</strong> {report.data.totalProducts || 0}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Add New Task Form */}
+      <div className="bg-gray-50 rounded-lg p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Add New Scheduled Task</h3>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Task Name</label>
+            <input
+              type="text"
+              value={newTask.name}
+              onChange={(e) => setNewTask(prev => ({ ...prev, name: e.target.value }))}
+              placeholder="Enter task name"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+            <select
+              value={newTask.type}
+              onChange={(e) => setNewTask(prev => ({ ...prev, type: e.target.value as 'product' | 'category' }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            >
+              <option value="product">Product</option>
+              <option value="category">Category</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Platform</label>
+            <select
+              value={newTask.platform}
+              onChange={(e) => setNewTask(prev => ({ ...prev, platform: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            >
+              <option value="">Select Platform</option>
+              {platforms.map(platform => (
+                <option key={platform.value} value={platform.value}>
+                  {platform.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">URL</label>
+            <input
+              type="url"
+              value={newTask.url}
+              onChange={(e) => setNewTask(prev => ({ ...prev, url: e.target.value }))}
+              placeholder="Enter URL to scrape"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            />
+          </div>
+
+          {newTask.type === 'category' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Page Number</label>
+              <input
+                type="number"
+                value={newTask.page}
+                onChange={(e) => setNewTask(prev => ({ ...prev, page: parseInt(e.target.value) || 1 }))}
+                min="1"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              />
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Main Category</label>
+            <select
+              value={newTask.categoryId}
+              onChange={(e) => handleCategoryChange(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            >
+              <option value="">Select Category</option>
+              {schedulerCategories.map(category => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {newTask.categoryId && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Sub Category</label>
+              <select
+                value={newTask.subcategoryId}
+                onChange={(e) => handleSubcategoryChange(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              >
+                <option value="">Select Sub Category</option>
+                {availableSubcategories.map(subcategory => (
+                  <option key={subcategory.id} value={subcategory.id}>
+                    {subcategory.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {newTask.subcategoryId && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Sub Sub Category</label>
+              <select
+                value={newTask.subSubcategoryId}
+                onChange={(e) => setNewTask(prev => ({ ...prev, subSubcategoryId: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              >
+                <option value="">Select Sub Sub Category</option>
+                {availableSubSubcategories.map(subSubcategory => (
+                  <option key={subSubcategory.id} value={subSubcategory.id}>
+                    {subSubcategory.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-4">
+          <button
+            onClick={handleAddTask}
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center space-x-2"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Add Task</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Scheduled Tasks List */}
+      <div>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Scheduled Tasks ({scheduledTasks.length})</h3>
+        
+        {scheduledTasks.length === 0 ? (
+          <div className="text-center py-8">
+            <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-500">No scheduled tasks found</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {scheduledTasks.map((task) => (
+              <div key={task.id} className="bg-white border border-gray-200 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <h4 className="font-medium text-gray-900">{task.name}</h4>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        task.type === 'product' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
+                      }`}>
+                        {task.type}
+                      </span>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        task.platform === 'flipkart' ? 'bg-blue-100 text-blue-800' :
+                        task.platform === 'amazon' ? 'bg-orange-100 text-orange-800' :
+                        'bg-pink-100 text-pink-800'
+                      }`}>
+                        {task.platform}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-1">
+                      <strong>URL:</strong> {task.url}
+                    </p>
+                    {task.type === 'category' && (
+                      <p className="text-sm text-gray-600 mb-1">
+                        <strong>Page:</strong> {task.page}
+                      </p>
+                    )}
+                    <p className="text-sm text-gray-600">
+                      <strong>Category:</strong> {
+                        task.categoryId ? schedulerCategories.find(c => c.id === task.categoryId)?.name || 'Unknown' : 'Not selected'
+                      }
+                      {task.subcategoryId && ` › ${availableSubcategories.find(s => s.id === task.subcategoryId)?.name || task.subcategoryId}`}
+                      {task.subSubcategoryId && ` › ${availableSubSubcategories.find(s => s.id === task.subSubcategoryId)?.name || task.subSubcategoryId}`}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => onRemoveTask(task.id)}
+                    className="p-2 text-red-600 hover:text-red-700 transition-colors"
+                    title="Remove Task"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const ScrapeProducts: React.FC = () => {
   const [selectedPlatform, setSelectedPlatform] = useState<string>('');
@@ -42,6 +454,12 @@ const ScrapeProducts: React.FC = () => {
   const [availableSubSubcategories, setAvailableSubSubcategories] = useState<any[]>([]);
   const [isInserting, setIsInserting] = useState<boolean>(false);
   const [isLoadingCategories, setIsLoadingCategories] = useState<boolean>(false);
+  
+  // Scheduler state
+  const [showScheduler, setShowScheduler] = useState<boolean>(false);
+  const [scheduledTasks, setScheduledTasks] = useState<any[]>([]);
+  const [schedulerRunning, setSchedulerRunning] = useState<boolean>(false);
+  const [schedulerInterval, setSchedulerInterval] = useState<NodeJS.Timeout | null>(null);
 
 
 
@@ -50,6 +468,153 @@ const ScrapeProducts: React.FC = () => {
     { value: 'amazon', label: 'Amazon', color: 'bg-orange-500' },
     { value: 'myntra', label: 'Myntra', color: 'bg-pink-500' },
   ];
+
+  // Scheduler functions
+  const loadScheduledTasks = () => {
+    try {
+      const stored = localStorage.getItem('scheduledScrapingTasks');
+      if (stored) {
+        setScheduledTasks(JSON.parse(stored));
+      }
+    } catch (error) {
+      console.error('Failed to load scheduled tasks:', error);
+    }
+  };
+
+  const saveScheduledTasks = (tasks: any[]) => {
+    try {
+      localStorage.setItem('scheduledScrapingTasks', JSON.stringify(tasks));
+      setScheduledTasks(tasks);
+    } catch (error) {
+      console.error('Failed to save scheduled tasks:', error);
+      toast.error('Failed to save scheduled tasks');
+    }
+  };
+
+  const addScheduledTask = (task: any) => {
+    const newTasks = [...scheduledTasks, { ...task, id: Date.now().toString() }];
+    saveScheduledTasks(newTasks);
+    toast.success('Scheduled task added successfully');
+  };
+
+  const removeScheduledTask = (taskId: string) => {
+    const newTasks = scheduledTasks.filter(task => task.id !== taskId);
+    saveScheduledTasks(newTasks);
+    toast.success('Scheduled task removed');
+  };
+
+  const startScheduler = () => {
+    if (scheduledTasks.length === 0) {
+      toast.error('No scheduled tasks found');
+      return;
+    }
+
+    setSchedulerRunning(true);
+    toast.success('Scheduler started');
+
+    // Run immediately
+    runScheduledTasks();
+
+    // Set interval to run every 5 minutes (300000ms)
+    const interval = setInterval(() => {
+      runScheduledTasks();
+    }, 300000);
+
+    setSchedulerInterval(interval);
+  };
+
+  const stopScheduler = () => {
+    setSchedulerRunning(false);
+    if (schedulerInterval) {
+      clearInterval(schedulerInterval);
+      setSchedulerInterval(null);
+    }
+    toast.success('Scheduler stopped');
+  };
+
+  const runScheduledTasks = async () => {
+    console.log('🔄 Running scheduled scraping tasks...');
+    
+    for (const task of scheduledTasks) {
+      try {
+        console.log(`📋 Processing task: ${task.name}`);
+        
+        let scrapedData = null;
+        
+        if (task.type === 'product') {
+          const response = await scrapingApi.scrapeProduct(task.platform, task.url);
+          scrapedData = response.data;
+        } else if (task.type === 'category') {
+          const response = await scrapingApi.scrapeCategory(task.platform, task.url, task.page || 1);
+          scrapedData = response.data;
+        }
+        
+        // Save scraped data to localStorage
+        if (scrapedData) {
+          saveScheduledScrapedData(task, scrapedData);
+        }
+        
+        console.log(`✅ Task completed: ${task.name}`);
+        toast.success(`Scheduled task completed: ${task.name}`);
+      } catch (error) {
+        console.error(`❌ Task failed: ${task.name}`, error);
+        toast.error(`Scheduled task failed: ${task.name}`);
+        
+        // Save error to localStorage
+        saveScheduledScrapedData(task, null, error instanceof Error ? error.message : String(error));
+      }
+    }
+  };
+
+  const saveScheduledScrapedData = (task: any, data: any, error?: string) => {
+    try {
+      const reportData = {
+        taskId: task.id,
+        taskName: task.name,
+        type: task.type,
+        platform: task.platform,
+        url: task.url,
+        categoryId: task.categoryId,
+        subcategoryId: task.subcategoryId,
+        subSubcategoryId: task.subSubcategoryId,
+        scrapedAt: new Date().toISOString(),
+        success: !error,
+        error: error || null,
+        data: data,
+        page: task.page || 1
+      };
+
+      // Get existing reports
+      const existingReports = JSON.parse(localStorage.getItem('scheduledScrapingReports') || '[]');
+      
+      // Add new report
+      existingReports.push(reportData);
+      
+      // Keep only last 100 reports to prevent localStorage overflow
+      const recentReports = existingReports.slice(-100);
+      
+      // Save to localStorage
+      localStorage.setItem('scheduledScrapingReports', JSON.stringify(recentReports));
+      
+      console.log(`💾 Saved scraped data for task: ${task.name}`);
+    } catch (error) {
+      console.error('Failed to save scheduled scraped data:', error);
+    }
+  };
+
+  // Load scheduled tasks on component mount
+  useEffect(() => {
+    loadScheduledTasks();
+  }, []);
+
+  // Cleanup scheduler on component unmount
+  useEffect(() => {
+    return () => {
+      if (schedulerInterval) {
+        clearInterval(schedulerInterval);
+      }
+    };
+  }, [schedulerInterval]);
 
   const handleScrape = async () => {
     if (!selectedPlatform) {
@@ -65,12 +630,23 @@ const ScrapeProducts: React.FC = () => {
     setIsLoading(true);
     setError('');
     setScrapedData(null);
+    
     // Prepare category name for history
     const categoryName = (() => {
       if (!selectedCategoryId) return undefined;
       const top = categories.find((c: any) => c.id === selectedCategoryId);
       return top?.name;
     })();
+
+    // Create new scraping session
+    const sessionId = scrapingHistoryService.addSession({
+      platform: selectedPlatform,
+      type: scrapeType,
+      url: productUrl,
+      category: categoryName,
+      action: `scrape_${scrapeType}`,
+      status: 'in_progress'
+    });
 
     // POST scrape-logs (pending)
     let remoteLogId: string | undefined;
@@ -92,6 +668,16 @@ const ScrapeProducts: React.FC = () => {
         const data = await scrapingApi.scrapeProduct(selectedPlatform, productUrl);
         setScrapedData(data.data);
         setScrapedCategoryData(null);
+        
+        // Update session with success
+        scrapingHistoryService.updateSession(sessionId, {
+          status: 'completed',
+          totalProducts: 1,
+          scrapedProducts: 1,
+          failedProducts: 0,
+          productData: [data.data]
+        });
+        
         toast.success('Product scraped successfully!');
         // PUT scrape-logs success
         if (remoteLogId) {
@@ -99,9 +685,24 @@ const ScrapeProducts: React.FC = () => {
         }
       } else if (scrapeType === 'category') {
         const data = await scrapingApi.scrapeCategory(selectedPlatform, productUrl, pageNumber);
+        
+        // Log that "Add to Compare" text has been automatically removed
+        console.log('🧹 "Add to Compare" text has been automatically removed from scraped data');
+        console.log(`📊 Found ${data.data.products.length} products after cleaning`);
+        
         setScrapedCategoryData(data.data);
         setScrapedData(null);
         setSelectedProducts([]);
+        
+        // Update session with category success
+        scrapingHistoryService.updateSession(sessionId, {
+          status: 'completed',
+          totalProducts: data.data.totalProducts,
+          scrapedProducts: data.data.products.length,
+          failedProducts: 0,
+          productData: data.data.products
+        });
+        
         toast.success(`Category scraped successfully! Found ${data.data.totalProducts} products on page ${pageNumber}.`);
         // PUT scrape-logs success
         if (remoteLogId) {
@@ -111,6 +712,16 @@ const ScrapeProducts: React.FC = () => {
     } catch (err: any) {
       const errorMessage = err.message || `Failed to scrape ${scrapeType}. Please try again.`;
       setError(errorMessage);
+      
+      // Update session with failure
+      scrapingHistoryService.updateSession(sessionId, {
+        status: 'failed',
+        errorMessage: errorMessage,
+        totalProducts: 1,
+        scrapedProducts: 0,
+        failedProducts: 1
+      });
+      
       toast.error(errorMessage);
       // PUT scrape-logs failed
       if (remoteLogId) {
@@ -1112,13 +1723,41 @@ const ScrapeProducts: React.FC = () => {
     <div className="space-y-6">
       {/* Header */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center space-x-3 mb-2">
-          <div className="h-10 w-10 bg-indigo-600 rounded-lg flex items-center justify-center">
-            <Download className="h-6 w-6 text-white" />
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center space-x-3">
+            <div className="h-10 w-10 bg-indigo-600 rounded-lg flex items-center justify-center">
+              <Download className="h-6 w-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Scrape Products</h1>
+              <p className="text-gray-600">Extract product data from e-commerce platforms</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Scrape Products</h1>
-            <p className="text-gray-600">Extract product data from e-commerce platforms</p>
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={() => setShowScheduler(true)}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center space-x-2"
+            >
+              <Clock className="h-4 w-4" />
+              <span>Scheduler</span>
+            </button>
+            {schedulerRunning ? (
+              <button
+                onClick={stopScheduler}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center space-x-2"
+              >
+                <Pause className="h-4 w-4" />
+                <span>Stop Scheduler</span>
+              </button>
+            ) : (
+              <button
+                onClick={startScheduler}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center space-x-2"
+              >
+                <Play className="h-4 w-4" />
+                <span>Start Scheduler</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1583,23 +2222,25 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
                     All configuration is complete. Click the button below to start scraping.
                   </p>
                 </div>
-                <button
-                  onClick={handleScrape}
-                  disabled={isLoading}
-                  className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                      <span>Scraping...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Download className="h-5 w-5" />
-                      <span>Start Scraping</span>
-                    </>
-                  )}
-                </button>
+                <div className="flex items-center space-x-3">
+                  <button
+                    onClick={handleScrape}
+                    disabled={isLoading}
+                    className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                        <span>Scraping...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Download className="h-5 w-5" />
+                        <span>Start Scraping</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -2798,6 +3439,38 @@ Wireless Headphones,Over-ear with ANC,Premium ANC wireless headphones for commut
           </div>
         </div>
       )}
+
+      {/* Scheduler Modal */}
+      {showScheduler && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl h-[90vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div className="flex items-center space-x-3">
+                <Clock className="h-6 w-6 text-purple-600" />
+                <h2 className="text-xl font-semibold text-gray-900">Scraping Scheduler</h2>
+              </div>
+              <button
+                onClick={() => setShowScheduler(false)}
+                className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              <SchedulerContent 
+                scheduledTasks={scheduledTasks}
+                onAddTask={addScheduledTask}
+                onRemoveTask={removeScheduledTask}
+                platforms={platforms}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
