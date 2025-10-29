@@ -7,6 +7,7 @@ import Products from './pages/Products';
 import Categories from './pages/Categories';
 import ScrapeProducts from './pages/ScrapeProducts';
 import ScrapingDetails from './pages/ScrapingDetails';
+import Scheduler from './pages/Scheduler';
 import Profile from './pages/Profile';
 
 const AdminLayout: React.FC = () => {
@@ -28,6 +29,8 @@ const AdminLayout: React.FC = () => {
         return <ScrapeProducts />;
       case 'scraping-details':
         return <ScrapingDetails />;
+      case 'scheduler':
+        return <Scheduler />;
       case 'profile':
         return <Profile />;
       case 'settings':

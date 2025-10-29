@@ -11,6 +11,7 @@ import {
   UserCircle,
   Settings,
   Download,
+  Clock,
   ChevronDown,
   ChevronRight,
   Bot
@@ -25,7 +26,7 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
   const { admin, logout, loading } = useAuth();
   const [scrapperExpanded, setScrapperExpanded] = useState(
-    activeTab === 'scrape-products' || activeTab === 'scraping-details'
+    activeTab === 'scrape-products' || activeTab === 'scraping-details' || activeTab === 'scheduler'
   );
   
   const menuItems = [
@@ -39,6 +40,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
   const scrapperItems = [
     { id: 'scrape-products', label: 'Product Scrapper', icon: Download },
     { id: 'scraping-details', label: 'Scraping Details', icon: Download },
+    { id: 'scheduler', label: 'Scheduler', icon: Clock },
   ];
 
   const settingsItems = [
@@ -48,7 +50,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
 
   // Auto-expand scrapper section when scrapper-related tab is active
   useEffect(() => {
-    if (activeTab === 'scrape-products' || activeTab === 'scraping-details') {
+    if (activeTab === 'scrape-products' || activeTab === 'scraping-details' || activeTab === 'scheduler') {
       setScrapperExpanded(true);
     }
   }, [activeTab]);

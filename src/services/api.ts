@@ -225,6 +225,70 @@ export interface GetCategoriesResponse {
   };
 }
 
+// Scheduler Task Types
+export type SchedulerTaskType = 'product' | 'category';
+export type SchedulerPlatform = 'flipkart' | 'amazon' | 'myntra' | '1mg' | 'nykaa' | 'ajio' | 'meesho' | 'snapdeal' | 'paytm' | 'other';
+export type SchedulerStatus = 'scheduled' | 'running' | 'completed' | 'cancelled';
+export type SchedulerResultStatus = 'pending' | 'passed' | 'failed';
+
+export interface SchedulerTaskPayload {
+  taskName: string;
+  taskType: SchedulerTaskType;
+  platform: SchedulerPlatform;
+  url?: string | null;
+  mainCategoryId?: string | null;
+  subCategoryId?: string | null;
+  subSubCategoryId?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
+  status?: SchedulerStatus;
+  resultStatus?: SchedulerResultStatus;
+  notes?: string;
+}
+
+export interface SchedulerTask {
+  _id: string;
+  taskName: string;
+  taskType: SchedulerTaskType;
+  platform: SchedulerPlatform;
+  url?: string | null;
+  mainCategoryId?: any;
+  subCategoryId?: any;
+  subSubCategoryId?: any;
+  categoryPath?: string[];
+  schedule?: { startTime?: string | null; endTime?: string | null };
+  status: SchedulerStatus;
+  resultStatus: SchedulerResultStatus;
+  notes?: string;
+  createdBy?: { id: string; name: string; email: string };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateSchedulerTaskResponse {
+  success: boolean;
+  message: string;
+  data: { task: SchedulerTask };
+}
+
+export interface ListSchedulerTasksResponse {
+  success: boolean;
+  message: string;
+  data: { tasks: SchedulerTask[]; pagination: { currentPage: number; totalPages: number; totalItems: number; hasNext: boolean; hasPrev: boolean } };
+}
+
+export interface GetSchedulerTaskResponse {
+  success: boolean;
+  message: string;
+  data: { task: SchedulerTask };
+}
+
+export interface UpdateSchedulerTaskResponse {
+  success: boolean;
+  message: string;
+  data: { task: SchedulerTask };
+}
+
 export interface ApiError {
   success: false;
   message: string;
@@ -949,6 +1013,72 @@ export const adminApi = {
         error.response?.data?.message || 
         error.message || 
         'Failed to fetch categories.'
+      );
+    }
+  },
+
+  // Scheduler: Create task
+  createSchedulerTask: async (payload: SchedulerTaskPayload): Promise<CreateSchedulerTaskResponse> => {
+    try {
+      const response: AxiosResponse<CreateSchedulerTaskResponse> = await api.post('/admin/scheduler/tasks', payload);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        error.response?.data?.message ||
+        error.message ||
+        'Failed to create scheduler task.'
+      );
+    }
+  },
+
+  // Scheduler: List tasks
+  listSchedulerTasks: async (params?: {
+    page?: number;
+    limit?: number;
+    platform?: string;
+    status?: string;
+    resultStatus?: string;
+    taskType?: string;
+    search?: string;
+    startFrom?: string;
+    startTo?: string;
+  }): Promise<ListSchedulerTasksResponse> => {
+    try {
+      const response: AxiosResponse<ListSchedulerTasksResponse> = await api.get('/admin/scheduler/tasks', { params });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        error.response?.data?.message ||
+        error.message ||
+        'Failed to list scheduler tasks.'
+      );
+    }
+  },
+
+  // Scheduler: Get single task
+  getSchedulerTask: async (id: string): Promise<GetSchedulerTaskResponse> => {
+    try {
+      const response: AxiosResponse<GetSchedulerTaskResponse> = await api.get(`/admin/scheduler/tasks/${id}`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        error.response?.data?.message ||
+        error.message ||
+        'Failed to fetch scheduler task.'
+      );
+    }
+  },
+
+  // Scheduler: Update task
+  updateSchedulerTask: async (id: string, payload: Partial<SchedulerTaskPayload>): Promise<UpdateSchedulerTaskResponse> => {
+    try {
+      const response: AxiosResponse<UpdateSchedulerTaskResponse> = await api.put(`/admin/scheduler/tasks/${id}`, payload);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        error.response?.data?.message ||
+        error.message ||
+        'Failed to update scheduler task.'
       );
     }
   },
